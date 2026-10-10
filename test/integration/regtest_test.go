@@ -967,9 +967,15 @@ func testNodeRestart(t *testing.T, en *Engine, a *Node, rec *recorder) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	heightBefore := a.height(t)
 	docker(t, "restart", "-t", "5", a.Name)
 	waitFor(t, "engine notices node outage", 60*time.Second, func() bool { return !en.E.Stats().Snapshot().Node.Connected })
 	waitFor(t, "node RPC back", 60*time.Second, func() bool { _, err := a.RPC.GetBlockchainInfo(ctx); return err == nil })
+	// A node killed before it flushed comes back with a shorter chain; every
+	// later check would then fail far from the cause.
+	if h := a.height(t); h < heightBefore {
+		t.Fatalf("node lost chain on restart (unclean shutdown): height %d, was %d before the restart", h, heightBefore)
+	}
 	var none any
 	_ = a.Wallet.Call(ctx, "loadwallet", []any{"w"}, &none)
 	waitFor(t, "engine reconnected", 60*time.Second, func() bool {

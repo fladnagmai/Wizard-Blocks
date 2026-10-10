@@ -293,6 +293,9 @@ func startEngine(t *testing.T, cfg config.Config, name string) *Engine {
 }
 
 // Stop shuts the engine down gracefully (idempotent).
+// Running reports whether the engine has not been stopped yet.
+func (en *Engine) Running() bool { return en.cancel != nil }
+
 func (en *Engine) Stop(t *testing.T) {
 	if en.cancel == nil {
 		return

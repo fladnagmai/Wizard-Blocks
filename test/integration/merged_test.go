@@ -75,6 +75,10 @@ func TestRegtestMergedLTCDOGE(t *testing.T) {
 	rec := &recorder{m: map[string]submission{}}
 	auxOn := func() bool { w := en.E.Manager().Current(); return w != nil && w.Aux != nil }
 	dogeView := func() map[string]any {
+		t.Helper()
+		if !en.Running() {
+			t.Fatal("dogeView: engine already stopped (read the page before en.Stop)")
+		}
 		r, err := http.Get("http://" + en.E.UIAddr() + "/api/state")
 		if err != nil {
 			t.Fatal(err)
@@ -87,7 +91,11 @@ func TestRegtestMergedLTCDOGE(t *testing.T) {
 		return dv
 	}
 	reasonIs := func(want string) func() bool {
-		return func() bool { v := dogeView(); return v != nil && v["merged"] == false && v["reason"] == want }
+		return func() bool {
+			t.Helper()
+			v := dogeView()
+			return v != nil && v["merged"] == false && v["reason"] == want
+		}
 	}
 
 	// 0. No DOGE address: Litecoin only, the page says why, no tag.
@@ -101,6 +109,7 @@ func TestRegtestMergedLTCDOGE(t *testing.T) {
 	// Set the DOGE address from Settings: checked by the Dogecoin node,
 	// refused if it is not a DOGE address, applied without a restart.
 	putDoge := func(addr string) (int, string) {
+		t.Helper()
 		body, _ := json.Marshal(map[string]string{"address": addr})
 		req, _ := http.NewRequest(http.MethodPut, "http://"+en.E.UIAddr()+"/api/admin/doge-payout", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -194,6 +203,7 @@ func TestRegtestMergedLTCDOGE(t *testing.T) {
 	waitFor(t, "DOGE blocks after restart", 60*time.Second, func() bool {
 		return len(auxBlocks(en, "pending")) == 0 && len(auxBlocks(en, "accepted")) > dogeBefore
 	})
+	pageDoge := dogeView() // read the page while the engine still serves it
 	en.Stop(t)
 
 	// ---- verify ----
@@ -273,9 +283,8 @@ func TestRegtestMergedLTCDOGE(t *testing.T) {
 	}
 	nd := len(auxBlocks(en, "accepted"))
 	// The page's per-chain counts match the two chains.
-	st := dogeView()
-	if int(st["blocks_found"].(float64)) != nd {
-		t.Fatalf("page DOGE blocks_found %v, nodes have %d", st["blocks_found"], nd)
+	if n, ok := pageDoge["blocks_found"].(float64); !ok || int(n) != nd {
+		t.Fatalf("page DOGE blocks_found %v, nodes have %d", pageDoge["blocks_found"], nd)
 	}
 	blocksVerified.Add(int64(len(ltcAccepted) + nd))
 	t.Logf("merged: VERIFIED %d LTC blocks and %d DOGE blocks; %d shares were blocks on both chains; %d LTC blocks mined while Dogecoin was down",
