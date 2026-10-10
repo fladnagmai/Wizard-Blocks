@@ -128,11 +128,12 @@ func startNode(t *testing.T, coin, network, name string, extra ...string) *Node 
 	args = append(args, extra...)
 	// Fixed host ports: Docker reassigns ephemeral ports when a container
 	// restarts, and the node-restart test needs stable endpoints.
-	// A port picked by freePort can be taken before Docker binds it, so a
-	// clash is retried with new ports rather than failing the test.
+	// A picked port can be taken before Docker binds it, so a clash is
+	// retried with new ports rather than failing the test.
 	for attempt := 1; ; attempt++ {
+		ports := freePorts(t, 2) // distinct: RPC and ZMQ
 		run := []string{"run", "-d", "--name", name, "--network", network, "--network-alias", name,
-			"-p", fmt.Sprintf("127.0.0.1:%d:18443", freePort(t)), "-p", fmt.Sprintf("127.0.0.1:%d:28332", freePort(t)),
+			"-p", fmt.Sprintf("127.0.0.1:%d:18443", ports[0]), "-p", fmt.Sprintf("127.0.0.1:%d:28332", ports[1]),
 			"--entrypoint", entry, image}
 		out, err := exec.Command("docker", append(run, args...)...).CombinedOutput()
 		if err == nil {
@@ -427,11 +428,29 @@ func ensureReleaseImage(t *testing.T, image, dockerDir, name, baseURL, sha strin
 	}
 }
 
-func freePort(t *testing.T) int {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+// freePorts returns n distinct free loopback ports. All n listeners stay
+// open until every port is chosen: closing each one first let the OS hand
+// the same port out twice (docker then failed with "Bind ... failed").
+func freePorts(t *testing.T, n int) []int {
+	ports := make([]int, 0, n)
+	for range n {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer l.Close()
+		ports = append(ports, l.Addr().(*net.TCPAddr).Port)
 	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
+	return ports
+}
+
+// Regression (hotfix run 15): two ports picked for one container must
+// differ, or docker fails with "Bind for 127.0.0.1:N failed".
+func TestFreePortsDistinct(t *testing.T) {
+	for i := 0; i < 500; i++ {
+		p := freePorts(t, 2)
+		if p[0] == p[1] {
+			t.Fatalf("same port twice: %v", p)
+		}
+	}
 }
