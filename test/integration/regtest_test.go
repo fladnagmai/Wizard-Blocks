@@ -968,7 +968,7 @@ func testNodeRestart(t *testing.T, en *Engine, a *Node, rec *recorder) {
 		t.Fatal(err)
 	}
 	heightBefore := a.height(t)
-	docker(t, "restart", "-t", "5", a.Name)
+	docker(t, "restart", "-t", "60", a.Name) // time to flush; a normal shutdown takes 0-2 s
 	waitFor(t, "engine notices node outage", 60*time.Second, func() bool { return !en.E.Stats().Snapshot().Node.Connected })
 	waitFor(t, "node RPC back", 60*time.Second, func() bool { _, err := a.RPC.GetBlockchainInfo(ctx); return err == nil })
 	// A node killed before it flushed comes back with a shorter chain; every
