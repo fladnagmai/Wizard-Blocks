@@ -106,6 +106,38 @@ func Handler(p *Poller, version string) http.Handler {
 		}
 		json.NewEncoder(w).Encode(resp)
 	})
+	mux.HandleFunc("POST /api/nodes/{key}/cache", func(w http.ResponseWriter, r *http.Request) {
+		if !sameOrigin(r) {
+			jsonErr(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		var body struct {
+			MiB *int `json:"mib"`
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1024)).Decode(&body); err != nil || body.MiB == nil {
+			jsonErr(w, http.StatusBadRequest, `body must be {"mib": <cache size>}`)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer cancel()
+		err := p.SetCache(ctx, r.PathValue("key"), *body.MiB)
+		switch {
+		case errors.Is(err, ErrUnknownNode):
+			jsonErr(w, http.StatusNotFound, err.Error())
+			return
+		case errors.Is(err, ErrNoCache):
+			jsonErr(w, http.StatusForbidden, err.Error())
+			return
+		case errors.Is(err, ErrBadCache):
+			jsonErr(w, http.StatusBadRequest, err.Error())
+			return
+		case err != nil:
+			jsonErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"dbcache_mib": *body.MiB, "restarting": true})
+	})
 	// no-store: a rebuilt image (same version) always serves its own page.
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +25,7 @@ type Node struct {
 	RPC      *node.Client
 	Pausable bool         // its sync (p2p network) can be paused from the page
 	Prune    *PruneConfig // its prune target can be changed from the page (nil: no)
+	Cache    *CacheConfig // its dbcache can be changed from the page (needs Prune: same file)
 }
 
 // Status is one node's state at the last check. Fields a node does not
@@ -40,9 +42,13 @@ type Status struct {
 	NetworkActive *bool `json:"network_active,omitempty"`
 	// Prune target: as set (conf file, MiB) and as the running node reports
 	// it (MiB; differs until the node restarts), with the page's choices.
-	PruneSet     int     `json:"prune_set_mib,omitempty"`
-	PruneRunning int     `json:"prune_running_mib,omitempty"`
-	PruneOptions []int   `json:"prune_options,omitempty"`
+	PruneSet     int   `json:"prune_set_mib,omitempty"`
+	PruneRunning int   `json:"prune_running_mib,omitempty"`
+	PruneOptions []int `json:"prune_options,omitempty"`
+	// Database cache (MiB) as set in the conf file, with the page's choices.
+	// The node does not report its running cache.
+	CacheSet     int     `json:"dbcache_mib,omitempty"`
+	CacheOptions []int   `json:"dbcache_options,omitempty"`
 	Error        string  `json:"error,omitempty"`
 	Version      string  `json:"version,omitempty"`
 	Chain        string  `json:"chain,omitempty"`
@@ -69,20 +75,26 @@ type Poller struct {
 	last   []Status
 	paused map[string]bool // by node key
 	prune  map[string]int  // last prune target chosen on the page, by node key
+	cache  map[string]int  // last dbcache chosen on the page, by node key
 	// restart: nodes to stop (so their container restarts with the conf
 	// file just written) as soon as they answer RPC.
 	restart map[string]bool
+	// restartCache: same, for a changed cache (the node cannot report it, so
+	// the stop is not skipped when the prune target already matches).
+	restartCache map[string]bool
 }
 
 // NewPoller creates a poller for nodes (checked in this order). Pauses set
 // from the page are kept in stateFile (if set) and re-applied after a node
 // or this service restarts.
 func NewPoller(nodes []Node, interval time.Duration, stateFile string) *Poller {
-	p := &Poller{nodes: nodes, interval: interval, stateFile: stateFile, last: make([]Status, len(nodes)), paused: map[string]bool{}, prune: map[string]int{}, restart: map[string]bool{}}
+	p := &Poller{nodes: nodes, interval: interval, stateFile: stateFile, last: make([]Status, len(nodes)), paused: map[string]bool{}, prune: map[string]int{}, cache: map[string]int{},
+		restart: map[string]bool{}, restartCache: map[string]bool{}}
 	if stateFile != "" {
 		var saved struct {
 			Paused map[string]bool `json:"paused"`
 			Prune  map[string]int  `json:"prune_mib"`
+			Cache  map[string]int  `json:"dbcache_mib"`
 		}
 		if b, err := os.ReadFile(stateFile); err == nil && json.Unmarshal(b, &saved) == nil {
 			for _, n := range nodes {
@@ -91,6 +103,9 @@ func NewPoller(nodes []Node, interval time.Duration, stateFile string) *Poller {
 				}
 				if n.Prune != nil && saved.Prune[n.Key] >= n.Prune.Min {
 					p.prune[n.Key] = saved.Prune[n.Key]
+				}
+				if n.Cache != nil && slices.Contains(n.Cache.Options, saved.Cache[n.Key]) {
+					p.cache[n.Key] = saved.Cache[n.Key]
 				}
 			}
 		}
@@ -150,7 +165,7 @@ func (p *Poller) saveLocked() error {
 	if p.stateFile == "" {
 		return nil
 	}
-	b, _ := json.MarshalIndent(map[string]any{"paused": p.paused, "prune_mib": p.prune}, "", "  ")
+	b, _ := json.MarshalIndent(map[string]any{"paused": p.paused, "prune_mib": p.prune, "dbcache_mib": p.cache}, "", "  ")
 	tmp := p.stateFile + ".tmp"
 	if err := os.MkdirAll(filepath.Dir(p.stateFile), 0o755); err != nil {
 		return err
@@ -207,22 +222,27 @@ func (p *Poller) CheckAll(ctx context.Context) {
 			s.Paused = paused
 			if n.Prune != nil {
 				s.PruneOptions = n.Prune.Options
-				if v, err := readPrune(n.Prune.ConfFile); err == nil {
+				if v, c, err := readConf(n.Prune.ConfFile); err == nil {
 					s.PruneSet = v
+					if n.Cache != nil {
+						s.CacheSet, s.CacheOptions = c, n.Cache.Options
+					}
 				}
 			}
 			p.mu.Lock()
 			restart := p.restart[n.Key]
-			if restart && s.PruneSet > 0 && s.PruneRunning == s.PruneSet {
+			if restart && !p.restartCache[n.Key] && s.PruneSet > 0 && s.PruneRunning == s.PruneSet {
 				delete(p.restart, n.Key) // already running with it
 				restart = false
 			}
+			restart = restart || p.restartCache[n.Key]
 			p.mu.Unlock()
 			if restart && (s.State == "synced" || s.State == "syncing") && n.RPC.Call(cctx, "stop", nil, nil) == nil {
 				p.mu.Lock()
 				delete(p.restart, n.Key)
+				delete(p.restartCache, n.Key)
 				p.mu.Unlock()
-				s.State, s.Error = "starting", "restarting to apply its prune target"
+				s.State, s.Error = "starting", "restarting to apply its settings"
 			}
 			p.mu.Lock()
 			p.last[i] = s

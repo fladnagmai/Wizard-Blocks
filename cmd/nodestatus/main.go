@@ -7,12 +7,14 @@
 //	NS_PAUSABLE     comma-separated node keys whose sync can be paused from
 //	                the page (e.g. "doge")
 //	NS_STATE_FILE   where pauses and prune choices are kept (default: memory only)
-//	LTC_CONF, DOGE_CONF  the nodes' -conf files holding their prune target;
-//	                set to let the page change pruning (the node restarts)
+//	LTC_CONF, DOGE_CONF  the nodes' -conf files holding their prune target
+//	                and database cache; set to let the page change them
+//	                (the node restarts)
 //	LTC_RPC_URL, LTC_RPC_USER, LTC_RPC_PASS     Litecoin node (optional)
 //	DOGE_RPC_URL, DOGE_RPC_USER, DOGE_RPC_PASS  Dogecoin node (optional)
 //
-// "nodestatus healthcheck" exits 0 once every *_CONF file has a prune target.
+// "nodestatus healthcheck" exits 0 once every *_CONF file has a prune
+// target and a cache size.
 package main
 
 import (
@@ -55,12 +57,18 @@ func main() {
 		"ltc":  {Default: 2000, Min: 550, Options: []int{550, 2000, 5000, 10000, 20000}},
 		"doge": {Default: 2200, Min: 2200, Options: []int{2200, 5000, 10000, 20000}},
 	}
+	// Database cache (MiB): a bigger one speeds up the first sync; set it
+	// back once synced. The defaults are the app's shipped settings.
+	caches := map[string]nodestatus.CacheConfig{
+		"ltc":  {Default: 300, Options: []int{300, 450, 1000, 2000, 4000}},
+		"doge": {Default: 200, Options: []int{200, 450, 1000, 2000, 4000}},
+	}
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		// Healthy once every node's conf file has a prune target (written
 		// by EnsurePruneConf at start); the nodes wait for this.
 		for k, prefix := range map[string]string{"ltc": "LTC", "doge": "DOGE"} {
-			if conf := os.Getenv(prefix + "_CONF"); conf != "" && !nodestatus.PruneConfReady(conf, prunes[k].Min) {
-				fmt.Fprintln(os.Stderr, "no prune target yet in", conf)
+			if conf := os.Getenv(prefix + "_CONF"); conf != "" && !nodestatus.ConfReady(conf, prunes[k].Min, true) {
+				fmt.Fprintln(os.Stderr, "no prune target or cache size yet in", conf)
 				os.Exit(1)
 			}
 		}
@@ -77,6 +85,8 @@ func main() {
 			pc := prunes[n.key]
 			pc.ConfFile = conf
 			nd.Prune = &pc
+			cc := caches[n.key]
+			nd.Cache = &cc
 		}
 		nodes = append(nodes, nd)
 		log.Info("watching node", "name", n.name, "url", url, "pausable", nd.Pausable, "prune_conf", os.Getenv(n.prefix+"_CONF"))

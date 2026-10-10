@@ -129,11 +129,11 @@ func TestEnsurePruneConfFirstStart(t *testing.T) {
 	sn, srv := newSwitchNode(t)
 	sn.prune = 2200 << 20
 	conf := filepath.Join(t.TempDir(), "dogecoin.conf")
-	if PruneConfReady(conf, 2200) {
+	if ConfReady(conf, 2200, false) {
 		t.Fatal("missing file reported ready")
 	}
 	p := NewPoller([]Node{{Key: "doge", Name: "Dogecoin Node", RPC: node.NewClient(srv.URL, "", "", "", time.Second), Prune: dogePrune(conf)}}, time.Hour, "")
-	if fixed, err := p.EnsurePruneConf(); err != nil || len(fixed) != 1 || !PruneConfReady(conf, 2200) {
+	if fixed, err := p.EnsurePruneConf(); err != nil || len(fixed) != 1 || !ConfReady(conf, 2200, false) {
 		t.Fatalf("%v %v", fixed, err)
 	}
 	p.CheckAll(context.Background())

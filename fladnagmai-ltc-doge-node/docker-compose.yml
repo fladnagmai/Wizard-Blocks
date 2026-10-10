@@ -23,11 +23,10 @@ services:
       RPC_PASS: ${APP_LITECOIN_RPC_PASS}
     command:
       - -datadir=/data
-      - -conf=/conf/litecoin.conf          # prune target, written by web (the app page)
+      - -conf=/conf/litecoin.conf          # prune target and dbcache, written by web (the app page)
       - -printtoconsole
       - -server
       - -txindex=0
-      - -dbcache=300
       - -maxmempool=100
       - -maxconnections=24
       - -par=2
@@ -63,11 +62,10 @@ services:
       RPC_PASS: ${APP_DOGECOIN_RPC_PASS}
     command:
       - -datadir=/data
-      - -conf=/conf/dogecoin.conf          # prune target, written by web (the app page)
+      - -conf=/conf/dogecoin.conf          # prune target and dbcache, written by web (the app page)
       - -printtoconsole
       - -server
       - -txindex=0
-      - -dbcache=200
       - -maxmempool=100
       - -maxconnections=24
       - -par=2

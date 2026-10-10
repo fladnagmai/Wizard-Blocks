@@ -58,6 +58,9 @@ function render(st) {
         const pend = n.prune_set_mib && n.prune_running_mib && n.prune_set_mib !== n.prune_running_mib ? ` (set ${int(n.prune_set_mib)} MiB, applies on restart)` : '';
         lines.push(`  prune        ${int(n.prune_running_mib || n.prune_set_mib)} MiB${pend}`);
       }
+      if (n.dbcache_mib) {
+        lines.push(`  cache        ${int(n.dbcache_mib)} MiB`);
+      }
       if (n.chain && n.chain !== 'main') lines.push(`  chain        ${n.chain}`);
       lines.push(`  version      ${n.version || '-'}`);
     }
@@ -114,8 +117,58 @@ function controls(nodes) {
       row.append(label, sel, b);
       rows.push(row);
     }
+    if (n.dbcache_options && n.dbcache_options.length) {
+      rows.push(choice(n, coin, 'cache', n.dbcache_options, n.dbcache_mib, setCache));
+    }
   }
   box.replaceChildren(...rows);
+}
+
+const pickedCache = {}; // cache size chosen in a menu but not applied yet, by node key
+// choice builds one "<coin> <what> [menu] [apply]" row.
+function choice(n, coin, what, options, now, apply) {
+  const row = document.createElement('span');
+  row.className = 'prune';
+  const label = document.createElement('label');
+  label.textContent = `${coin} ${what}`;
+  const sel = document.createElement('select');
+  sel.id = `${what}-${n.key}`;
+  label.htmlFor = sel.id;
+  const cur = pickedCache[n.key] || now;
+  for (const mib of options) {
+    const o = document.createElement('option');
+    o.value = String(mib);
+    o.textContent = `${int(mib)} MiB${mib === now ? ' (now)' : ''}`;
+    o.selected = mib === cur;
+    sel.append(o);
+  }
+  sel.disabled = busy;
+  sel.addEventListener('change', () => { pickedCache[n.key] = Number(sel.value); });
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.disabled = busy;
+  b.textContent = 'apply (restarts node)';
+  b.addEventListener('click', () => apply(n, Number(sel.value)));
+  row.append(label, sel, b);
+  return row;
+}
+
+async function setCache(n, mib) {
+  const msg = document.getElementById('msg');
+  if (mib === n.dbcache_mib) { msg.textContent = `${n.name} cache is already ${int(mib)} MiB.`; return; }
+  if (!window.confirm(`Set ${n.name} database cache to ${int(mib)} MiB and restart it now?`)) return;
+  busy = true;
+  msg.textContent = `setting ${n.name} cache to ${int(mib)} MiB…`;
+  try {
+    await post(`api/nodes/${encodeURIComponent(n.key)}/cache`, { mib });
+    delete pickedCache[n.key];
+    msg.textContent = `${n.name} cache set to ${int(mib)} MiB; the node is restarting to apply it (a minute or two). Set it back once synced to free the memory.`;
+  } catch (e) {
+    msg.textContent = `could not set the cache size: ${e.message}`;
+  } finally {
+    busy = false;
+    refresh();
+  }
 }
 
 async function post(path, body) {
