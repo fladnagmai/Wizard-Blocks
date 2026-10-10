@@ -60,6 +60,7 @@ function bannerText(name, ticker, reason) {
   switch (reason) {
     case 'no address': return `Mining ${name} only. Add a ${ticker} payout address in Settings to also mine ${ticker === 'DOGE' ? 'Dogecoin' : ticker}.`;
     case 'node down': return `Mining ${name} only: the ${ticker === 'DOGE' ? 'Dogecoin' : ticker} node is down. ${ticker === 'DOGE' ? 'Dogecoin' : ticker} mining resumes on its own.`;
+    case 'node has no peers': return `Mining ${name} only: the ${ticker === 'DOGE' ? 'Dogecoin' : ticker} node has no peers (sync paused?). ${ticker === 'DOGE' ? 'Dogecoin' : ticker} mining resumes when it reconnects.`;
     case 'node syncing': return `Mining ${name} only: the ${ticker === 'DOGE' ? 'Dogecoin' : ticker} node is syncing. ${ticker === 'DOGE' ? 'Dogecoin' : ticker} mining resumes on its own.`;
     default: return `Mining ${name} only: ${ticker} merged mining is unavailable (${reason || 'unknown'}).`;
   }

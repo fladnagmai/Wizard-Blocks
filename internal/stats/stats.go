@@ -239,7 +239,8 @@ func New(coin, version, dataDir string) *Collector {
 // AuxStatus is the state of a merged-mined aux chain (Dogecoin).
 type AuxStatus struct {
 	// Merged is true while its blocks are being mined; Reason says why not
-	// otherwise: "no address", "node down", "node syncing".
+	// otherwise: "no address", "node down", "node syncing", "node has no
+	// peers" (e.g. its sync paused), "node error".
 	Merged      bool    `json:"merged"`
 	Reason      string  `json:"reason,omitempty"`
 	Connected   bool    `json:"connected"`

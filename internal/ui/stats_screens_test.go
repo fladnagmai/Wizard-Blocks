@@ -62,7 +62,7 @@ func TestStatsScreens(t *testing.T) {
 	defer cancel()
 	rpc := fakeLTCNode(t)
 	serve := func(st *stats.Collector, seed24h bool) string {
-		srv := New(Config{Coin: "ltc", Version: "0.2.0-dev", Style: "stats", StratumPort: 50333, PayoutMode: "fixed", SettingsOpen: true}, st,
+		srv := New(Config{Coin: "ltc", Version: "0.2.0-test1", Style: "stats", StratumPort: 50333, PayoutMode: "fixed", SettingsOpen: true}, st,
 			node.NewClient(rpc.URL, "u", "p", "", time.Second), log)
 		srv.SetSettingsBackend(&screenBackend{fakeBackend: fakeBackend{d: stratum.DiffSettings{Min: 1024, Max: 1e12, TargetSeconds: 10, Start: 262144},
 			payout: "ltc1qg82e7d7ky5uc8x0xmdmfdzt6yp7eqlzg7gj9pr"}, aux: true})

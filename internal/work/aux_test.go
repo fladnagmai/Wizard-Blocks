@@ -99,3 +99,65 @@ func TestMergedMiningJobAndProof(t *testing.T) {
 		t.Fatal("MinDiff not set")
 	}
 }
+
+// When the aux source withdraws its work (the Dogecoin node has no peers,
+// e.g. its sync paused), updateAux publishes the same parent template again
+// without the merged-mining tag, as a clean job in the same generation, so
+// miners stop wasting work on a DOGE block that cannot be submitted; when
+// the work returns, the tag comes back.
+func TestAuxWithdrawnDropsTag(t *testing.T) {
+	p, _ := ParamsFor(address.LTC)
+	_, b := loadLTCBlock(t, "testnet4Block2319633.dat")
+	height, _ := bitcoin.DecodeBIP34Height(b.Txs[0].Inputs[0].Script)
+	gbt := templateFromBlock(t, b, height, true)
+	gbt.MWEB = hex.EncodeToString(b.MWEB)
+	tmpl, err := NewTemplate(gbt, p, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	easy := new(big.Int).Lsh(big.NewInt(1), 255)
+	block := AuxBlock{Chain: "doge", ChainID: 0x62, Hash: bitcoin.Hash{0xd0, 0x6e}, Target: easy, Height: 5}
+	aux := &fakeAux{blocks: []AuxBlock{block}, ch: make(chan struct{})}
+	m := NewManager(Config{Params: p, Chain: "test", Tag: []byte("/t/"), Extranonce2Size: 8, Aux: aux}, nil,
+		stats.New("ltc", "t", ""), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	aw, _ := newAuxWork(aux.Current(), m.PoW())
+	m.cur = &Work{Tmpl: tmpl, Gen: 7, Aux: aw, m: m, byScript: map[string]*Job{}}
+	var got []*Work
+	m.listeners = append(m.listeners, func(w *Work) { got = append(got, w) })
+	script := []byte{0x00, 0x14, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}
+	hasTag := func(w *Work) bool {
+		job, err := w.Job(script, "x")
+		if err != nil {
+			t.Fatal(err)
+		}
+		cb, err := bitcoin.ParseTx(job.CB.Tx([]byte{1, 2, 3, 4}, make([]byte, 8)), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return bytes.Contains(cb.Inputs[0].Script, []byte{0xfa, 0xbe, 0x6d, 0x6d})
+	}
+	if !hasTag(m.cur) {
+		t.Fatal("setup: no tag")
+	}
+	aux.mu.Lock()
+	aux.blocks = nil
+	aux.mu.Unlock()
+	m.updateAux(nil)
+	if len(got) != 1 || got[0].Aux != nil || !got[0].Clean || got[0].Gen != 7 || got[0].Tmpl != tmpl {
+		t.Fatalf("withdrawn aux work: %+v", got)
+	}
+	if hasTag(got[0]) {
+		t.Fatal("coinbase still carries the merged-mining tag after the aux work was withdrawn")
+	}
+	m.updateAux(nil) // nothing changed: no new jobs
+	if len(got) != 1 {
+		t.Fatal("republished with nothing changed")
+	}
+	aux.mu.Lock()
+	aux.blocks = []AuxBlock{block}
+	aux.mu.Unlock()
+	m.updateAux(nil)
+	if len(got) != 2 || got[1].Aux == nil || !hasTag(got[1]) {
+		t.Fatal("tag not back when the aux work returned")
+	}
+}

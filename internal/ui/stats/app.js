@@ -107,7 +107,11 @@ function render(st) {
   const n = st.node || {}, d = st.node_detail || {}, p = st.pool || {}, dv = st.derived || {}, tp = st.template || {}, sv = st.stratum || {};
   const aux = Object.keys(st.chains || {}).filter((c) => c !== coin.coin).map((c) => c.toUpperCase());
   const coins = [ticker, ...aux].join(' + ');
-  $('title').textContent = `Wizard-Blocks · ${coins} ${st.chain || n.chain || ''}`.trim();
+  // Test builds (version with "test") say so until the mainnet MWEB block
+  // check passes (docs/RELEASE-BLOCKERS.md).
+  const test = /test/i.test(st.version || '');
+  $('title').textContent = `Wizard-Blocks${test ? ' TEST' : ''} · ${coins} ${st.chain || n.chain || ''}`.trim();
+  $('testnote').hidden = !test;
   $('status').textContent = `live ${new Date(now * 1000).toLocaleTimeString()}`;
 
   const main = $('main');

@@ -198,8 +198,15 @@ func (d *Doge) fetch(ctx context.Context, why string) {
 		if errors.As(err, &rpcErr) {
 			up = true
 			reason = ReasonNodeError
-			if rpcErr.Code == -10 || rpcErr.Code == -9 { // in initial download / not connected
+			// dogecoind's AuxMiningCheck (rpc/mining.cpp, v1.14.9): -10
+			// RPC_CLIENT_IN_INITIAL_DOWNLOAD "Dogecoin is downloading
+			// blocks...", -9 RPC_CLIENT_NOT_CONNECTED "Dogecoin is not
+			// connected!" (no peers: e.g. its sync paused from the node app).
+			switch rpcErr.Code {
+			case -10:
 				reason = ReasonNodeSyncing
+			case -9:
+				reason = ReasonNodeNoPeers
 			}
 		}
 		d.report(false, reason, nil, up)
@@ -232,6 +239,7 @@ const (
 	ReasonNoAddress   = "no address"
 	ReasonNodeDown    = "node down"
 	ReasonNodeSyncing = "node syncing"
+	ReasonNodeNoPeers = "node has no peers"
 	ReasonNodeError   = "node error"
 )
 
