@@ -242,6 +242,7 @@ async function syncSession() {
     $('s-login').hidden = !(s.enabled && s.password_required && !s.authed);
     $('s-body').hidden = locked;
     if (!s.enabled) smsg('settings are disabled on this engine');
+    if (!locked) loadLimits();
   } catch (e) { smsg(e.message); }
 }
 
@@ -264,6 +265,32 @@ $('s-doge-save').addEventListener('click', async () => {
     refresh();
   } catch (e) { smsg(e.message); }
 });
+// Connection limits (total and per IP). Hidden if the engine does not offer them.
+function fillLimits(r) {
+  $('s-maxconn').value = r.limits.max_connections;
+  $('s-maxip').value = r.limits.max_connections_per_ip;
+  $('s-maxconn').title = `default ${r.defaults.max_connections}, max ${r.max}`;
+  $('s-maxip').title = `default ${r.defaults.max_connections_per_ip}`;
+}
+async function loadLimits() {
+  const line = $('s-maxconn').closest('.line');
+  try { fillLimits(await api('api/admin/limits', 'GET')); line.hidden = line.previousElementSibling.hidden = false; } catch (e) { line.hidden = line.previousElementSibling.hidden = true; }
+}
+$('s-lim-save').addEventListener('click', async () => {
+  try {
+    const r = await api('api/admin/limits', 'PUT', { max_connections: Number($('s-maxconn').value), max_connections_per_ip: Number($('s-maxip').value) });
+    fillLimits(r);
+    smsg(`connection limits saved: ${r.limits.max_connections} total, ${r.limits.max_connections_per_ip} per IP`);
+  } catch (e) { smsg(e.message); }
+});
+$('s-lim-reset').addEventListener('click', async () => {
+  try {
+    const r = await api('api/admin/limits', 'DELETE');
+    fillLimits(r);
+    smsg(`connection limits back to the defaults: ${r.limits.max_connections} total, ${r.limits.max_connections_per_ip} per IP`);
+  } catch (e) { smsg(e.message); }
+});
+
 $('s-unlock').addEventListener('click', async () => {
   try { await api('api/admin/login', 'POST', { password: $('s-pw').value }); $('s-pw').value = ''; smsg('unlocked'); syncSession(); } catch (e) { smsg(e.message); }
 });

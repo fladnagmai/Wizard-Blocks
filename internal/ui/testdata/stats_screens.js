@@ -27,6 +27,8 @@ const cfg = JSON.parse(process.argv[2]);
       for (const want of ['ENGINE', 'LTC NODE', 'DOGE NODE', 'CHAINS', 'JOB', 'POOL', 'MINERS', 'BLOCKS', 'LTC + DOGE', 'live (3.5m)', 'TEST BUILD', 'Wizard-Blocks TEST']) if (!text.includes(want)) errors.push('missing ' + want);
       if (name === 'stats-mining' && !(text.includes('dg1') && text.includes('5,412,345') && text.includes('stale 3'))) errors.push('mining data missing');
       if (name === 'stats-no-miners' && !(text.includes('no miners yet') && text.includes('no address'))) errors.push('empty-state text missing');
+      const lim = await page.evaluate(() => [document.getElementById('s-maxconn').value, document.getElementById('s-maxip').value, !document.getElementById('s-maxconn').closest('.line').hidden]);
+      if (!text.includes('connection limits') || lim[0] !== '1024' || lim[1] !== '64' || !lim[2]) errors.push('connection limits ' + JSON.stringify(lim));
       if (bg !== 'rgb(0, 0, 0)') errors.push('background ' + bg);
       if (fg !== 'rgb(255, 105, 180)') errors.push('text colour ' + fg);
       const file = `${cfg.out}/${name}-${vname}.png`;

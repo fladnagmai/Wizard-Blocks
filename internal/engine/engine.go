@@ -260,6 +260,7 @@ func (e *Engine) Start(ctx context.Context) error {
 	}, e.mgr, e.resolve, e.st, e.log)
 	e.baseDiff = e.srv.DiffSettings()
 	e.loadSavedSettings()
+	e.loadSavedLimits()
 	if err := e.srv.Listen(); err != nil {
 		return fmt.Errorf("stratum listen: %w", err)
 	}

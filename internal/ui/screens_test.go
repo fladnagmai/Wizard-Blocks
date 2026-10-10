@@ -98,3 +98,11 @@ type screenBackend struct {
 
 func (f *screenBackend) DogePayout() (string, bool)                            { return "", f.aux }
 func (f *screenBackend) SetDogePayout(context.Context, string) (string, error) { return "", nil }
+
+var screenLimits = stratum.ConnLimits{MaxConnections: 1024, MaxPerIP: 64}
+
+func (f *screenBackend) ConnLimits() (stratum.ConnLimits, stratum.ConnLimits, bool) {
+	return screenLimits, screenLimits, false
+}
+func (f *screenBackend) SetConnLimits(stratum.ConnLimits) error { return nil }
+func (f *screenBackend) ResetConnLimits() error                 { return nil }

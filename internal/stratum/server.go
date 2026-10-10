@@ -60,6 +60,7 @@ type Server struct {
 	en1InUse map[uint32]struct{}
 	en1Next  uint32
 	closing  bool
+	limits   ConnLimits // live; starts from cfg
 
 	diffs atomic.Pointer[DiffSettings]
 
@@ -78,6 +79,7 @@ func NewServer(cfg Config, mgr *work.Manager, resolve PayoutResolver, st *stats.
 		sessions: map[*Session]struct{}{}, perIP: map[string]int{}, en1InUse: map[uint32]struct{}{},
 		en1Next: binary.BigEndian.Uint32(seed[:]),
 		dups:    map[uint64]map[bitcoin.Hash]struct{}{},
+		limits:  ConnLimits{MaxConnections: cfg.MaxConnections, MaxPerIP: cfg.MaxConnsPerIP},
 	}
 	ds := DiffSettings{Min: cfg.Vardiff.Min, Max: cfg.Vardiff.Max, TargetSeconds: cfg.Vardiff.TargetShare.Seconds(), Start: cfg.Vardiff.Initial,
 		FixedDiff: cfg.Vardiff.FixedDiff, Overrides: map[string]float64{}}
@@ -150,7 +152,7 @@ func (s *Server) Serve(ctx context.Context) error {
 func (s *Server) admit(ctx context.Context, conn net.Conn) {
 	ip, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
 	s.mu.Lock()
-	if s.closing || len(s.sessions) >= s.cfg.MaxConnections || s.perIP[ip] >= s.cfg.MaxConnsPerIP {
+	if s.closing || len(s.sessions) >= s.limits.MaxConnections || s.perIP[ip] >= s.limits.MaxPerIP {
 		n := len(s.sessions)
 		s.mu.Unlock()
 		s.log.Warn("connection refused (limit)", "ip", ip, "open", n)
