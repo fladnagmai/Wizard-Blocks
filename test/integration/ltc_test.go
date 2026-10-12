@@ -206,6 +206,13 @@ func TestRegtestLTC(t *testing.T) {
 		}
 		return true
 	})
+	// The block check: the real node accepted the full block a job would
+	// produce (proposal mode), MWEB part included.
+	if ti := en.E.Stats().Snapshot().Template; ti.BlockCheck != "valid" || ti.BlockCheckHeight < firstMWEBHeight {
+		t.Fatalf("block check: %q at height %d, want valid at a height >= %d (MWEB active)", ti.BlockCheck, ti.BlockCheckHeight, firstMWEBHeight)
+	} else {
+		t.Logf("block check: node accepts the engine's full block at height %d (MWEB active)", ti.BlockCheckHeight)
+	}
 	en.Stop(t)
 	script := a.scriptOf(t, payout)
 	var accepted, withMWEB, withMWEBSpend, withPegout, withPegin, preMWEBWithTxs, postEmpty int

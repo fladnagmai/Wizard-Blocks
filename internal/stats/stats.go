@@ -175,6 +175,11 @@ type TemplateInfo struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 	NewBlocks     uint64    `json:"new_block_events"`
 	Refreshes     uint64    `json:"template_refreshes"`
+	// Block check: the node's verdict on the block a current job would
+	// produce ("valid", "REJECTED: <reason>" or "not checked: ...").
+	BlockCheck       string    `json:"block_check,omitempty"`
+	BlockCheckHeight int64     `json:"block_check_height,omitempty"`
+	BlockCheckAt     time.Time `json:"block_check_at,omitempty"`
 }
 
 // Collector is safe for concurrent use.

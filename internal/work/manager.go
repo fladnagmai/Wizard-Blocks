@@ -76,6 +76,7 @@ func (w *Work) Job(script []byte, addr string) (*Job, error) {
 	j.Aux = w.Aux
 	w.m.register(j)
 	w.byScript[string(script)] = j
+	w.m.checkBlock(j)
 	return j, nil
 }
 
@@ -101,6 +102,7 @@ type Manager struct {
 	auxSubmitted sync.Map // "chain:hash" -> struct{}: aux block solution submitted
 	ready        chan struct{}
 	readyOnce    sync.Once
+	check        blockChecker
 }
 
 // PoW returns the proof-of-work algorithm of the coin being mined.
