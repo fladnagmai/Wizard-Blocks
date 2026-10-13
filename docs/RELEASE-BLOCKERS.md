@@ -22,7 +22,16 @@ Until this passes, the LTC app is a test build: its version carries "test"
 (0.2.0-test1), its store name and description say TEST, and its page shows a
 TEST BUILD line.
 
-Status: **open**.
+Status: **passed** (2026-10-13). Run on the owner's Umbrel against a block from
+their own synced Litecoin node: mainnet block 3,194,565
+(`7ab19194c5c6c07bf6775b647e8e937e4c36fee51ef51a50493ebab83c2a71df`), 71 txs,
+MWEB part 171 bytes: Merkle root, witness commitment and byte-for-byte
+re-serialization all match. The block file stays on the Umbrel (it was not
+copied into the repo). The same day the node accepted the engine's own full
+block through the block check (getblocktemplate proposal mode) on mainnet.
+
+The TEST label can now be dropped. Still open before a non-test release: the
+30/30 on the release engine and the live testnet trial.
 
 ## Rental readiness
 
