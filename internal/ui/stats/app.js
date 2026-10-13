@@ -177,7 +177,7 @@ function render(st) {
     ['transactions', int(tp.transactions)],
     ['new-block events', int(tp.new_block_events)],
     ['refreshes', int(tp.template_refreshes)],
-    ['block check', tp.block_check ? [`${tp.block_check} (height ${int(tp.block_check_height)}, ${ago(tp.block_check_at, now)})`, tp.block_check.startsWith('REJECTED')] : 'waiting for the first job'],
+    ['block check', tp.block_check ? `${tp.block_check} (height ${int(tp.block_check_height)}, ${ago(tp.block_check_at, now)})` : 'waiting for the first job', !!tp.block_check && tp.block_check.startsWith('REJECTED')],
     ['best this job', dv.best_this_job ? `${int(dv.best_this_job)} (${(dv.best_this_job_pct || 0).toFixed(2)}%)` : '—'],
   ]));
   const rej = reasons(p.rejects);
