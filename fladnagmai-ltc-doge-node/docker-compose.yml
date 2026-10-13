@@ -23,11 +23,10 @@ services:
       RPC_PASS: ${APP_LITECOIN_RPC_PASS}
     command:
       - -datadir=/data
-      - -conf=/conf/litecoin.conf          # prune target, written by web (the app page)
+      - -conf=/conf/litecoin.conf          # prune target and dbcache, written by web (the app page)
       - -printtoconsole
       - -server
       - -txindex=0
-      - -dbcache=300
       - -maxmempool=100
       - -maxconnections=24
       - -par=2
@@ -63,11 +62,10 @@ services:
       RPC_PASS: ${APP_DOGECOIN_RPC_PASS}
     command:
       - -datadir=/data
-      - -conf=/conf/dogecoin.conf          # prune target, written by web (the app page)
+      - -conf=/conf/dogecoin.conf          # prune target and dbcache, written by web (the app page)
       - -printtoconsole
       - -server
       - -txindex=0
-      - -dbcache=200
       - -maxmempool=100
       - -maxconnections=24
       - -par=2
@@ -90,7 +88,7 @@ services:
   web:
     # The app page: both nodes' live status (nodes/status/Dockerfile,
     # cmd/nodestatus, standard library only).
-    image: ghcr.io/fladnagmai/node-status:0.1.0@sha256:88ae9d8d127b4d72faf5abdd01c277047995bda7fe99fa904ea19a45a5f5f861
+    image: ghcr.io/fladnagmai/node-status:0.2.0@sha256:69818f2a07a9bd46efa626deeee62c9dcd4a58a35e941ae1e7d5b3282aff14be
     user: "1000:1000"
     restart: on-failure
     healthcheck:
