@@ -34,7 +34,7 @@ func TestCollectorAndPersistence(t *testing.T) {
 	c := New("btc", "test", dir)
 	c.Connected("w1")
 	c.ShareAccepted("w1", 100, 5000, "bip310+xor+or")
-	c.ShareRejected("w1", "stale")
+	c.ShareRejected("w1", "low-difficulty")
 	c.BlockSubmitted(BlockRecord{Height: 10, Hash: "aa", Status: "pending"})
 	if p := c.Snapshot().Pool; p.BlocksFound != 0 || p.BlocksPending != 1 {
 		t.Fatalf("pending block counted as found: %+v", p)
@@ -49,7 +49,7 @@ func TestCollectorAndPersistence(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	WritePrometheus(&buf, s)
-	for _, want := range []string{`wb_blocks_total{coin="btc",status="accepted"} 1`, `wb_shares_total{coin="btc",result="rejected",reason="stale"} 1`, `wb_worker_best_share_difficulty{coin="btc",worker="w1"} 5000`} {
+	for _, want := range []string{`wb_blocks_total{coin="btc",status="accepted"} 1`, `wb_shares_total{coin="btc",result="rejected",reason="low-difficulty"} 1`, `wb_worker_best_share_difficulty{coin="btc",worker="w1"} 5000`} {
 		if !strings.Contains(buf.String(), want) {
 			t.Errorf("metrics missing %q", want)
 		}
@@ -274,5 +274,31 @@ func TestPoolLiveIsSumOfWorkers(t *testing.T) {
 	}
 	if s.Pool.HashrateLive != sum {
 		t.Fatalf("pool live %g, sum of workers %g", s.Pool.HashrateLive, sum)
+	}
+}
+
+// A stale share was valid when found: it is counted as stale, not as a
+// reject, and it has no entry among the reject reasons.
+func TestStaleIsNotRejected(t *testing.T) {
+	c := New("ltc", "test", "")
+	c.Connected("w1")
+	c.ShareAccepted("w1", 100, 100, "")
+	c.ShareRejected("w1", "stale")
+	c.ShareRejected("w1", "stale")
+	c.ShareRejected("w1", "duplicate")
+	s := c.Snapshot()
+	if s.Pool.Stale != 2 || s.Pool.Rejected != 1 || s.Pool.Rejects["stale"] != 0 || s.Pool.Rejects["duplicate"] != 1 {
+		t.Fatalf("pool: stale %d rejected %d rejects %v", s.Pool.Stale, s.Pool.Rejected, s.Pool.Rejects)
+	}
+	w := s.Workers[0]
+	if w.Stale != 2 || w.Rejected != 1 || w.Rejects["stale"] != 0 {
+		t.Fatalf("worker: stale %d rejected %d rejects %v", w.Stale, w.Rejected, w.Rejects)
+	}
+	var buf bytes.Buffer
+	WritePrometheus(&buf, s)
+	for _, want := range []string{`wb_shares_total{coin="ltc",result="stale",reason=""} 2`, `wb_worker_shares_total{coin="ltc",worker="w1",result="stale"} 2`, `wb_worker_shares_total{coin="ltc",worker="w1",result="rejected"} 1`} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("metrics missing %q", want)
+		}
 	}
 }

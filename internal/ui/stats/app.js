@@ -196,10 +196,10 @@ function render(st) {
   main.append(r2);
 
   const ws = (st.workers || []).slice().sort((a, b) => (b.hashrate_live || 0) - (a.hashrate_live || 0) || a.name.localeCompare(b.name));
-  main.append(table('MINERS', ['miner', 'conns', 'diff', 'live', '1h', 'accepted', 'rejected', 'reasons', 'best', 'last share'],
+  main.append(table('MINERS', ['miner', 'conns', 'diff', 'live', '1h', 'accepted', 'rejected', 'stale', 'reasons', 'best', 'last share'],
     ws.map((w) => [
       w.name, int(w.connections), int(w.difficulty), hash(w.hashrate_live), hash(w.hashrate_1h), int(w.shares_accepted),
-      [int(w.shares_rejected), w.shares_rejected > 0], reasons(w.rejects), int(w.best_share_difficulty), ago(w.last_share_at, now),
+      [int(w.shares_rejected), w.shares_rejected > 0], int(w.shares_stale || 0), reasons(w.rejects), int(w.best_share_difficulty), ago(w.last_share_at, now),
     ]), 'no miners yet'));
 
   const blocks = [

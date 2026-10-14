@@ -114,7 +114,7 @@ function render(st) {
   set('p-workers', `${p.workers_online ?? 0} online / ${(st.workers || []).length}`);
   set('p-acc', fmtInt(p.shares_accepted));
   const rej = Object.entries(p.rejects || {}).filter(([, v]) => v > 0).map(([k, v]) => `${k} ${v}`).join(', ');
-  set('p-rej', fmtInt(p.shares_rejected) + (rej ? ` (${rej})` : ''), p.shares_rejected > 0);
+  set('p-rej', fmtInt(p.shares_rejected) + (rej ? ` (${rej})` : '') + (p.shares_stale ? ` · ${fmtInt(p.shares_stale)} stale` : ''), p.shares_rejected > 0);
   set('p-bad', fmtInt(p.bad_messages));
   set('p-best', p.best_share_difficulty ? `${fmtDiff(p.best_share_difficulty)}${p.best_share_worker ? ' · ' + p.best_share_worker : ''}` : '—');
   set('p-netdiff', fmtDiff(t.network_difficulty));

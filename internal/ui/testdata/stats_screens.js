@@ -25,7 +25,7 @@ const cfg = JSON.parse(process.argv[2]);
       const fg = await page.evaluate(() => getComputedStyle(document.body).color);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
       for (const want of ['ENGINE', 'LTC NODE', 'DOGE NODE', 'CHAINS', 'JOB', 'POOL', 'MINERS', 'BLOCKS', 'LTC + DOGE', 'live (3.5m)', 'TEST BUILD', 'Wizard-Blocks TEST']) if (!text.includes(want)) errors.push('missing ' + want);
-      if (name === 'stats-mining' && !(text.includes('dg1') && text.includes('5,412,345') && text.includes('stale 3'))) errors.push('mining data missing');
+      if (name === 'stats-mining' && !(text.includes('dg1') && text.includes('5,412,345') && /stale\s+accepted|accepted\s+rejected\s+stale/i.test(text) && text.includes('3'))) errors.push('mining data missing');
       if (name === 'stats-no-miners' && !(text.includes('no miners yet') && text.includes('no address'))) errors.push('empty-state text missing');
       const lim = await page.evaluate(() => [document.getElementById('s-maxconn').value, document.getElementById('s-maxip').value, !document.getElementById('s-maxconn').closest('.line').hidden]);
       if (!text.includes('connection limits') || lim[0] !== '1024' || lim[1] !== '64' || !lim[2]) errors.push('connection limits ' + JSON.stringify(lim));

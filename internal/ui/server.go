@@ -474,7 +474,7 @@ func (s *Server) BuildState(maxBlocks, maxRounds int) State {
 	st.Derived.OddsDay = odds(hr, blockHashes, 86400)
 	st.Derived.OddsWeek = odds(hr, blockHashes, 7*86400)
 	st.Derived.OddsYear = odds(hr, blockHashes, 365*86400)
-	st.Derived.StaleShares = snap.Pool.Rejects["stale"]
+	st.Derived.StaleShares = snap.Pool.Stale
 	if l := snap.Pool.Luck; l.Shares > 0 {
 		v := l.Effort * 100
 		st.Derived.LuckPct = &v

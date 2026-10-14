@@ -146,6 +146,7 @@ func WritePrometheus(w io.Writer, s Snapshot) {
 	for _, r := range reasons {
 		fmt.Fprintf(w, "wb_shares_total{coin=\"%s\",result=\"rejected\",reason=\"%s\"} %d\n", coin, esc(r), s.Pool.Rejects[r])
 	}
+	fmt.Fprintf(w, "wb_shares_total{coin=\"%s\",result=\"stale\",reason=\"\"} %d\n", coin, s.Pool.Stale)
 	g("wb_best_share_difficulty", "Best share difficulty ever achieved.", "gauge")
 	fmt.Fprintf(w, "wb_best_share_difficulty{coin=\"%s\"} %g\n", coin, s.Pool.BestDiff)
 	g("wb_blocks_total", "Block candidates by final status.", "counter")
@@ -184,6 +185,7 @@ func WritePrometheus(w io.Writer, s Snapshot) {
 		n := esc(wk.Name)
 		fmt.Fprintf(w, "wb_worker_shares_total{coin=\"%s\",worker=\"%s\",result=\"accepted\"} %d\n", coin, n, wk.Accepted)
 		fmt.Fprintf(w, "wb_worker_shares_total{coin=\"%s\",worker=\"%s\",result=\"rejected\"} %d\n", coin, n, wk.Rejected)
+		fmt.Fprintf(w, "wb_worker_shares_total{coin=\"%s\",worker=\"%s\",result=\"stale\"} %d\n", coin, n, wk.Stale)
 	}
 	g("wb_worker_best_share_difficulty", "Best share difficulty per worker.", "gauge")
 	for _, wk := range s.Workers {

@@ -106,6 +106,7 @@ type Worker struct {
 	Accepted    uint64
 	Rejected    uint64
 	Rejects     map[string]uint64
+	Stale       uint64 // valid shares that arrived after a new block: not rejects
 	BestDiff    float64
 	Difficulty  float64
 	Interps     map[string]uint64 // accepted shares by version-rolling interpretation
@@ -195,6 +196,7 @@ type Collector struct {
 	accepted    uint64
 	rejected    uint64
 	rejects     map[string]uint64
+	stale       uint64
 	badMessages uint64  // non-JSON lines on the Stratum port
 	diff1Hashes float64 // hashes per share at difficulty 1 (pow.Algo.Diff1Hashes)
 	bestDiff    float64
@@ -444,10 +446,18 @@ func (c *Collector) roundFor(prevHash string) *Round {
 	return nil
 }
 
-// ShareRejected records a rejected share.
+// ShareRejected records a rejected share. A stale share (it was valid, but a
+// new block arrived first) is counted on its own and is not a reject.
 func (c *Collector) ShareRejected(worker, reason string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if reason == "stale" {
+		if worker != "" {
+			c.worker(worker).Stale++
+		}
+		c.stale++
+		return
+	}
 	if worker != "" {
 		w := c.worker(worker)
 		w.Rejected++
@@ -640,6 +650,7 @@ type WorkerSnapshot struct {
 	Accepted     uint64            `json:"shares_accepted"`
 	Rejected     uint64            `json:"shares_rejected"`
 	Rejects      map[string]uint64 `json:"rejects"`
+	Stale        uint64            `json:"shares_stale"`
 	Interps      map[string]uint64 `json:"version_interpretations"`
 	BestDiff     float64           `json:"best_share_difficulty"`
 	Difficulty   float64           `json:"difficulty"`
@@ -658,6 +669,7 @@ type PoolSnapshot struct {
 	Accepted      uint64            `json:"shares_accepted"`
 	Rejected      uint64            `json:"shares_rejected"`
 	Rejects       map[string]uint64 `json:"rejects"`
+	Stale         uint64            `json:"shares_stale"`
 	BadMessages   uint64            `json:"bad_messages"` // non-JSON lines on the Stratum port (not shares)
 	BestDiff      float64           `json:"best_share_difficulty"`
 	BestWorker    string            `json:"best_share_worker"`
@@ -707,7 +719,7 @@ func (c *Collector) Snapshot() Snapshot {
 			Hashrate5m:  c.pool.hashrate(now, 5*time.Minute, c.diff1Hashes),
 			Hashrate1h:  c.pool.hashrate(now, time.Hour, c.diff1Hashes),
 			Connections: c.connections, Accepted: c.accepted, Rejected: c.rejected,
-			Rejects: copyMap(c.rejects), BadMessages: c.badMessages, BestDiff: c.bestDiff, BestWorker: c.bestWorker, Luck: c.luck,
+			Rejects: copyMap(c.rejects), Stale: c.stale, BadMessages: c.badMessages, BestDiff: c.bestDiff, BestWorker: c.bestWorker, Luck: c.luck,
 			RecentShares: append([]RecentShare{}, c.recent...),
 		},
 		Blocks:    append([]BlockRecord{}, c.blocks...),
@@ -734,7 +746,7 @@ func (c *Collector) Snapshot() Snapshot {
 			Hashrate1m:   w.rate.hashrate(now, time.Minute, c.diff1Hashes),
 			Hashrate5m:   w.rate.hashrate(now, 5*time.Minute, c.diff1Hashes),
 			Hashrate1h:   w.rate.hashrate(now, time.Hour, c.diff1Hashes),
-			Accepted:     w.Accepted, Rejected: w.Rejected, Rejects: copyMap(w.Rejects),
+			Accepted:     w.Accepted, Rejected: w.Rejected, Rejects: copyMap(w.Rejects), Stale: w.Stale,
 			BestDiff: w.BestDiff, Difficulty: w.Difficulty, Race: w.Race,
 		}
 		if !w.LastShare.IsZero() {
