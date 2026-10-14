@@ -22,12 +22,10 @@ zero on the commit that gets built), then ask before building or pinning.
 - Name change fix for the pixel-art party (internal/ui/static/js/app.js,
   `CHARACTERS` and `syncParty`). Today the wizard is always called "ernie" and
   each character is tied to one fixed miner name. Wanted:
-  - Every character's name is the name of the miner it stands for.
-  - If the first miner that connects is named "ernie", the fixed names work as
-    today (ernie = wizard, chester = dwarf, ash = elf, bandit = dog, kaido =
-    angel, molly = Molly).
-  - If the first miner is not named "ernie", ignore all the fixed names: the
-    characters go out in order, one per miner in the order the miners
-    connected (wizard, dwarf, elf, dog, angel, Molly, the order in the current
-    party code), each named after its miner. Extra miners get the generated
-    characters as today.
+  - The characters have no names of their own.
+  - If the first miner that connects is named "ernie", the characters take
+    the names of the specific miners as today (ernie = wizard, chester =
+    dwarf, ash = elf, bandit = dog, kaido = angel, molly = Molly).
+  - Otherwise ignore all of those fixed names. Each character that shows up is
+    named after the actual miner whose connection made it show up, in the
+    order the miners connect.
