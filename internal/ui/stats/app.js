@@ -48,6 +48,12 @@ function ago(iso, now) {
 }
 
 const pct = (p) => (p === null || p === undefined ? '—' : `${p.toFixed(2)}%`);
+// Chance of a block as odds "1:N" (p is a probability, 0..1).
+const odds = (p) => {
+  if (p == null || !isFinite(p) || p <= 0) return '—';
+  const n = Math.max(1, Math.round(1 / p));
+  return n >= 1e12 ? '1:' + (1 / p).toExponential(2).replace('e+', 'E') : '1:' + n.toLocaleString('en-US');
+};
 
 function reasons(m) {
   const parts = Object.entries(m || {}).filter(([, n]) => n > 0).map(([k, n]) => `${k} ${n}`);
@@ -155,7 +161,7 @@ function render(st) {
 
   const chains = Object.entries(st.chains || {}).sort(([a], [b]) => (a === coin.coin ? -1 : b === coin.coin ? 1 : a.localeCompare(b)));
   if (chains.length) {
-    main.append(table('CHAINS', ['chain', 'merged', 'connected', 'synced', 'height', 'net diff', 'found', 'pending', 'effort', 'note'],
+    main.append(table('CHAINS', ['chain', 'merged', 'connected', 'synced', 'height', 'net diff', 'found', 'pending', 'effort', 'block odds / day', 'note'],
       chains.map(([name, c]) => [
         name.toUpperCase(),
         [yes(c.merged), !c.merged],
@@ -166,6 +172,7 @@ function render(st) {
         int(c.blocks_found),
         int(c.blocks_pending),
         pct(c.effort_pct),
+        odds(c.odds_day),
         c.reason || '',
       ]), 'no chains'));
   }
@@ -191,6 +198,7 @@ function render(st) {
     ['stale', int(dv.stale_shares)],
     ['best share', p.best_share_difficulty ? `${int(p.best_share_difficulty)} ${p.best_share_worker || ''}`.trim() : '—'],
     ['effort since block', pct(dv.luck_since_last_block_pct)],
+    ['block odds (day / week)', `${odds(dv.odds_day)} / ${odds(dv.odds_week)}`],
     ['blocks found / pending', `${int(p.blocks_found)} / ${int(p.blocks_pending)}`],
   ]));
   main.append(r2);

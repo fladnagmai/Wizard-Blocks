@@ -58,6 +58,13 @@ export function fmtPct(p, maxDigits = 3) {
   return (Math.floor(p * f) / f).toFixed(d) + '%';
 }
 
+// Chance of a block as odds "1:N" (p is a probability, 0..1).
+export function fmtOdds(p) {
+  if (p == null || !isFinite(p) || p <= 0) return '—';
+  const n = Math.max(1, Math.round(1 / p));
+  return n >= 1e12 ? '1:' + (1 / p).toExponential(2).replace('e+', 'E') : '1:' + n.toLocaleString('en-US');
+}
+
 export function fmtBytes(b) {
   if (!b) return '0 B';
   const u = ['B', 'KB', 'MB', 'GB', 'TB'];

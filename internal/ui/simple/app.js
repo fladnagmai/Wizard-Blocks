@@ -54,6 +54,12 @@ function fmtSecs(v) {
   return `${(v / 31536000).toFixed(1)} y`;
 }
 const pct = (v) => (v == null ? '—' : v < 0.01 ? (v * 100).toExponential(1) + ' %' : (v * 100).toFixed(2) + ' %');
+// Chance of a block as odds "1:N" (v is a probability, 0..1).
+const odds = (v) => {
+  if (v == null || !isFinite(v) || v <= 0) return '—';
+  const n = Math.max(1, Math.round(1 / v));
+  return n >= 1e12 ? '1:' + (1 / v).toExponential(2).replace('e+', 'E') : '1:' + n.toLocaleString('en-US');
+};
 
 // Banner shown while an aux chain (Dogecoin) is not being merge-mined.
 function bannerText(name, ticker, reason) {
@@ -73,7 +79,7 @@ function renderChain(prefix, title, v, isAux) {
   set(prefix + '-diff', fmtDiff(v.network_difficulty));
   set(prefix + '-effort', v.effort_pct == null ? '—' : v.effort_pct.toFixed(4) + ' %');
   set(prefix + '-exp', fmtSecs(v.expected_block_s));
-  set(prefix + '-odds', `${pct(v.odds_day)} / ${pct(v.odds_week)}`);
+  set(prefix + '-odds', `${odds(v.odds_day)} / ${odds(v.odds_week)}`);
   set(prefix + '-blocks', `${fmtInt(v.blocks_found)}${v.blocks_pending ? ` (+${v.blocks_pending} pending)` : ''}`);
 }
 
@@ -119,6 +125,7 @@ function render(st) {
   set('p-best', p.best_share_difficulty ? `${fmtDiff(p.best_share_difficulty)}${p.best_share_worker ? ' · ' + p.best_share_worker : ''}` : '—');
   set('p-netdiff', fmtDiff(t.network_difficulty));
   set('p-effort', d.luck_since_last_block_pct == null ? '—' : d.luck_since_last_block_pct.toFixed(4) + ' %');
+  set('p-odds', `${odds(d.odds_day)} / ${odds(d.odds_week)}`);
   set('p-blocks', `${fmtInt(p.blocks_found)}${p.blocks_pending ? ` (+${p.blocks_pending} pending)` : ''}`);
 
   const sx = st.stratum || {};

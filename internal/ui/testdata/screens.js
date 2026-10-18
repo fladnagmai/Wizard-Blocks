@@ -19,6 +19,8 @@ const cfg = JSON.parse(process.argv[2]);
       await page.screenshot({ path: file, fullPage: true });
       const banner = await page.evaluate(() => { const b = document.getElementById('banner'); return b.offsetParent === null ? '' : b.textContent; });
       const shown = await page.evaluate(() => Object.fromEntries(['chains', 'banner', 's-doge-wrap', 'diff'].map((id) => [id, document.getElementById(id).offsetParent !== null])));
+      const oddsTxt = await page.evaluate(() => ['p-odds', 'cp-odds', 'ca-odds'].map((id) => (document.getElementById(id) || {}).textContent || '').join(' '));
+      if (/%/.test(oddsTxt) || !/^(—|1:[\d,.E]+)( \/ (—|1:[\d,.E]+))*\s*/.test(oddsTxt.trim())) errors.push('block odds not shown as 1:N: ' + oddsTxt);
       const wantAux = name.startsWith('ltc'), wantBanner = name.startsWith('ltc') && name !== 'ltc-doge-merged';
       if (shown.chains !== wantAux || shown['s-doge-wrap'] !== wantAux || shown.banner !== wantBanner || !shown.diff) {
         errors.push('visibility wrong: ' + JSON.stringify(shown));

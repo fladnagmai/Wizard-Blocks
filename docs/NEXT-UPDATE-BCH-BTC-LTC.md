@@ -3,6 +3,11 @@
 Nothing here is built or pinned yet. One new image after the 30/30 (run from
 zero on the commit that gets built), then ask before building or pinning.
 
+## All apps (done on phase4-fix, in the next image)
+- Chance of hitting a block is shown as odds "1:N" instead of a percentage:
+  BCH page (block / day, week, year), BTC page (new row: block odds day /
+  week), LTC page (new pool row and a per-chain column, so Dogecoin too).
+
 ## LTC stuff (Wizard-Blocks² / Litecoin + Dogecoin)
 - Done on phase4-fix: block check row showed a stray ",false" (996641b).
 - Done on phase4-fix: stale shares are no longer counted as rejected (d1692d6).

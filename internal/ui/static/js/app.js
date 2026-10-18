@@ -5,7 +5,7 @@ import { SettingsPanel } from './settings.js';
 import { setPixelText, pixelizeHeadings } from './font.js';
 import { blockEvents, shareDelta } from './events.js';
 import {
-  fmtHash, fmtDiff, fmtInt, fmtDur, fmtAgo, fmtPct, fmtBytes, fmtCoin, shortHash, maskAddress, fmtTime,
+  fmtHash, fmtDiff, fmtInt, fmtDur, fmtAgo, fmtPct, fmtOdds, fmtBytes, fmtCoin, shortHash, maskAddress, fmtTime,
 } from './format.js';
 import { creatureColor, TROPHY, LEGENDARY, BLOCK_TIER } from './sprites.js';
 import { creatureSprite, creatureBody, CREATURE_KEYS } from './creatures.js';
@@ -313,9 +313,9 @@ function renderLedger(st) {
   ]);
   kv($('#odds-kv'), [
     ['Expected time', esc(d.expected_time_to_block_s == null ? '∞' : fmtDur(d.expected_time_to_block_s))],
-    ['Block / day', esc(fmtPct(d.odds_day * 100))],
-    ['Block / week', esc(fmtPct(d.odds_week * 100))],
-    ['Block / year', esc(fmtPct(d.odds_year * 100))],
+    ['Block / day', esc(fmtOdds(d.odds_day))],
+    ['Block / week', esc(fmtOdds(d.odds_week))],
+    ['Block / year', esc(fmtOdds(d.odds_year))],
   ]);
   const host = location.hostname || 'this-host';
   const addr = st.stratum.payout_address;
