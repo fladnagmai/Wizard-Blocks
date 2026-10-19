@@ -175,6 +175,7 @@ func mineUntil(t *testing.T, en *Engine, target int, timeout time.Duration) {
 }
 
 func runCoin(t *testing.T, cfg suite) {
+	track(t)
 	coin, expectSignal, nodeArgs := cfg.coin, cfg.expectSignal, cfg.nodeArgs
 	if cfg.phaseA == 0 {
 		cfg.phaseA = 150
@@ -931,6 +932,7 @@ func verifyChain(t *testing.T, a *Node, coin string, startHeight int64, external
 	for _, r := range accepted {
 		types[r.Address] = true
 	}
+	blocksVerified.Add(int64(len(accepted)))
 	t.Logf("%s: VERIFIED %d accepted blocks (heights %d..%d), %d external, largest block %d txs, total fees %d sats, %d distinct payout addresses",
 		coin, len(accepted), startHeight+1, final, external, maxTxs, totalFees, len(types))
 }
@@ -965,9 +967,15 @@ func testNodeRestart(t *testing.T, en *Engine, a *Node, rec *recorder) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	heightBefore := a.height(t)
 	docker(t, "restart", "-t", "60", a.Name) // time to flush; a normal shutdown takes 0-2 s
 	waitFor(t, "engine notices node outage", 60*time.Second, func() bool { return !en.E.Stats().Snapshot().Node.Connected })
 	waitFor(t, "node RPC back", 60*time.Second, func() bool { _, err := a.RPC.GetBlockchainInfo(ctx); return err == nil })
+	// A node killed before it flushed comes back with a shorter chain; every
+	// later check would then fail far from the cause.
+	if h := a.height(t); h < heightBefore {
+		t.Fatalf("node lost chain on restart (unclean shutdown): height %d, was %d before the restart", h, heightBefore)
+	}
 	var none any
 	_ = a.Wallet.Call(ctx, "loadwallet", []any{"w"}, &none)
 	waitFor(t, "engine reconnected", 60*time.Second, func() bool {
@@ -1122,20 +1130,51 @@ func testLiveDifficulty(t *testing.T, en *Engine, dataDir string) {
 	b := dial("live2", "d=2e-10") // miner pins its own difficulty
 	// Values below regtest network difficulty (4.66e-10) so the cap does not hide them.
 	settings := map[string]any{"vardiff_min": 1e-11, "vardiff_max": 1000, "vardiff_target_seconds": 10, "fixed_diff": 1e-10, "worker_overrides": map[string]float64{}}
+	_, _, _, _, j0 := a.State()
 	if code := call("PUT", "/api/admin/settings", settings); code != 200 {
 		t.Fatalf("PUT fixed: %d", code)
 	}
 	diffIs(a, 1e-10, "FIXED_DIFF pushed to connected miner")
 	diffIs(b, 2e-10, "password d= kept over FIXED_DIFF")
-	jobBefore := a.DrainJobs()
+	// The job that follows this change, so the next check cannot mistake it
+	// for the one after the override.
+	jctx, jcancel := context.WithTimeout(ctx, 5*time.Second)
+	jobBefore, err := a.WaitJobOtherThan(jctx, j0.ID)
+	jcancel()
+	if err != nil {
+		t.Fatalf("FIXED_DIFF change was not followed by a fresh job: %v", err)
+	}
 	settings["worker_overrides"] = map[string]float64{"live1": 3e-10}
 	if code := call("PUT", "/api/admin/settings", settings); code != 200 {
 		t.Fatalf("PUT override: %d", code)
 	}
 	diffIs(a, 3e-10, "per-worker override pushed")
-	if j := a.DrainJobs(); j == nil || j.ID == jobBefore.ID {
-		t.Fatal("difficulty change was not followed by a fresh job")
+	jctx, jcancel = context.WithTimeout(ctx, 5*time.Second)
+	_, err = a.WaitJobOtherThan(jctx, jobBefore.ID)
+	jcancel()
+	if err != nil {
+		t.Fatalf("difficulty change was not followed by a fresh job: %v", err)
 	}
+	// Rental rigs: one "rentx.*" rule covers rigs with changing names, and
+	// with the d= switch off a miner's own d= no longer pins its difficulty.
+	r1, r2 := dial("rentx.rig1", "x"), dial("rentx.rig77", "x")
+	settings["worker_overrides"] = map[string]float64{"live1": 3e-10, "rentx.*": 2.2e-10}
+	if code := call("PUT", "/api/admin/settings", settings); code != 200 {
+		t.Fatalf("PUT rental override: %d", code)
+	}
+	diffIs(r1, 2.2e-10, "rentx.* override on rig1")
+	diffIs(r2, 2.2e-10, "rentx.* override on rig77")
+	settings["ignore_password_diff"] = true
+	if code := call("PUT", "/api/admin/settings", settings); code != 200 {
+		t.Fatalf("PUT ignore d=: %d", code)
+	}
+	diffIs(b, 1e-10, "d= ignored with the switch off (fixed difficulty applies)")
+	settings["ignore_password_diff"] = false
+	if code := call("PUT", "/api/admin/settings", settings); code != 200 {
+		t.Fatalf("PUT honour d=: %d", code)
+	}
+	diffIs(b, 2e-10, "d= honoured again")
+	settings["worker_overrides"] = map[string]float64{"live1": 3e-10}
 	// Overrides are clamped to min/max.
 	settings["vardiff_max"] = 2.5e-10
 	settings["fixed_diff"] = 2e-10

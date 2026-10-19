@@ -19,14 +19,14 @@ import (
 	"github.com/fladnagmai/wizard-blocks/internal/node"
 )
 
-const testBTCAddr = "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2"
+const testLTCAddr = "LTpYZG19YmfvY2bBDYtCKpunVRw7nVgRHW"
 
 // payoutNode answers validateaddress: the first `down` calls fail (node not
 // answering), later ones give the node's verdict.
 func payoutNode(t *testing.T, down int32, valid bool) (*httptest.Server, *atomic.Int32) {
 	t.Helper()
-	n, _ := address.NetworkFor(address.BTC, "main")
-	a, err := address.Decode(n, testBTCAddr)
+	n, _ := address.NetworkFor(address.LTC, "main")
+	a, err := address.Decode(n, testLTCAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,9 +46,9 @@ func payoutNode(t *testing.T, down int32, valid bool) (*httptest.Server, *atomic
 func payoutEngine(t *testing.T, url string) *Engine {
 	t.Helper()
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "payout-btc.json"), []byte(`{"address":"`+testBTCAddr+`"}`), 0o600)
-	n, _ := address.NetworkFor(address.BTC, "main")
-	cfg := config.Config{Coin: "btc", DataDir: dir}
+	os.WriteFile(filepath.Join(dir, "payout-ltc.json"), []byte(`{"address":"`+testLTCAddr+`"}`), 0o600)
+	n, _ := address.NetworkFor(address.LTC, "main")
+	cfg := config.Config{Coin: "ltc", DataDir: dir}
 	cfg.Payout.Mode = "fixed"
 	return &Engine{cfg: cfg, net: n, log: slog.New(slog.NewTextHandler(io.Discard, nil)),
 		rpc: node.NewClient(url, "u", "p", "", time.Second)}
@@ -69,7 +69,7 @@ func TestSavedPayoutSurvivesNodeBlip(t *testing.T) {
 	if err := e.initPayout(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if p := e.fixedPayout(); p == nil || p.Address != testBTCAddr {
+	if p := e.fixedPayout(); p == nil || p.Address != testLTCAddr {
 		t.Fatalf("saved payout lost: %+v", p)
 	}
 	if calls.Load() != 4 {

@@ -19,6 +19,8 @@ import (
 	"github.com/fladnagmai/wizard-blocks/internal/node"
 	"github.com/fladnagmai/wizard-blocks/internal/stats"
 	"github.com/fladnagmai/wizard-blocks/internal/stratum"
+
+	"github.com/fladnagmai/wizard-blocks/internal/pow"
 )
 
 //go:embed static
@@ -29,6 +31,12 @@ var staticFS embed.FS
 //
 //go:embed simple
 var simpleFS embed.FS
+
+// statsFS is the plain stats page (WB_UI_STYLE=stats, the LTC app's
+// default): pool hashrates and best share, and each miner's live hashrate.
+//
+//go:embed stats
+var statsFS embed.FS
 
 // Config is what the UI needs to know about the engine's configuration.
 type Config struct {
@@ -42,7 +50,7 @@ type Config struct {
 	DataDir         string
 	AdminPassword   string
 	SettingsOpen    bool
-	Style           string // "simple": the one-page stats UI (simple/), else the Mine/Ledger (static/)
+	Style           string // "simple": the one-page stats UI (simple/); "stats": the plain stats page (stats/); else the Mine/Ledger (static/)
 }
 
 // Server is the web UI server.
@@ -120,8 +128,11 @@ func (s *Server) Listen(addr string) error {
 	}
 	s.ln = ln
 	sub, _ := fs.Sub(staticFS, "static")
-	if s.cfg.Style == "simple" {
+	switch s.cfg.Style {
+	case "simple":
 		sub, _ = fs.Sub(simpleFS, "simple")
+	case "stats":
+		sub, _ = fs.Sub(statsFS, "stats")
 	}
 	files := http.FileServer(http.FS(sub))
 	mux := http.NewServeMux()
@@ -339,6 +350,33 @@ type State struct {
 	Mounts     []Mount     `json:"mounts"`
 	MountOffer *MountOffer `json:"mount_offer,omitempty"`
 	Stratum    StratumInfo `json:"stratum"`
+	// Chains is set when an aux chain is configured (LTC + DOGE): one entry
+	// per chain, the parent under its coin name.
+	Chains map[string]ChainView `json:"chains,omitempty"`
+	// AuxBlocks are the merged-mined aux blocks, newest first.
+	AuxBlocks []stats.BlockRecord `json:"aux_blocks,omitempty"`
+	// AuxCoins describes the aux chains (name, ticker, explorer).
+	AuxCoins map[string]CoinInfo `json:"aux_coins,omitempty"`
+}
+
+// ChainView is one chain's summary for a merged-mining page.
+type ChainView struct {
+	Merged         bool     `json:"merged"`
+	Reason         string   `json:"reason,omitempty"` // why an aux chain is not merged
+	Connected      bool     `json:"connected"`
+	Synced         bool     `json:"synced"`
+	ZMQ            bool     `json:"zmq_connected"`
+	Height         int64    `json:"height"`
+	NetworkDiff    float64  `json:"network_difficulty"`
+	PayoutAddress  string   `json:"payout_address,omitempty"`
+	BlocksFound    int      `json:"blocks_found"`
+	BlocksPending  int      `json:"blocks_pending"`
+	LastBlock      *int64   `json:"last_block_height,omitempty"`
+	EffortPct      *float64 `json:"effort_pct"`
+	ExpectedBlockS *float64 `json:"expected_block_s"`
+	OddsDay        float64  `json:"odds_day"`
+	OddsWeek       float64  `json:"odds_week"`
+	OddsYear       float64  `json:"odds_year"`
 }
 
 // Derived are values computed from the raw statistics.
@@ -372,12 +410,14 @@ type StratumInfo struct {
 	Difficulty      *stratum.DiffSettings `json:"difficulty,omitempty"`
 }
 
-// odds returns the probability of at least one block in seconds at hashrate.
-func odds(hashrate, netDiff, seconds float64) float64 {
-	if hashrate <= 0 || netDiff <= 0 {
+// odds returns the probability of at least one block in seconds at hashrate,
+// where blockHashes is the expected number of hashes per block (network
+// difficulty in share units × hashes per difficulty-1 share).
+func odds(hashrate, blockHashes, seconds float64) float64 {
+	if hashrate <= 0 || blockHashes <= 0 {
 		return 0
 	}
-	return 1 - math.Exp(-hashrate*seconds/(netDiff*4294967296))
+	return 1 - math.Exp(-hashrate*seconds/blockHashes)
 }
 
 // BuildState assembles the UI document.
@@ -426,19 +466,73 @@ func (s *Server) BuildState(maxBlocks, maxRounds int) State {
 	if hr == 0 {
 		hr = snap.Pool.Hashrate5m
 	}
+	blockHashes := nd * pow.For(s.cfg.Coin).Diff1Hashes
 	if hr > 0 && nd > 0 {
-		v := nd * 4294967296 / hr
+		v := blockHashes / hr
 		st.Derived.ExpectedBlockS = &v
 	}
-	st.Derived.OddsDay = odds(hr, nd, 86400)
-	st.Derived.OddsWeek = odds(hr, nd, 7*86400)
-	st.Derived.OddsYear = odds(hr, nd, 365*86400)
-	st.Derived.StaleShares = snap.Pool.Rejects["stale"]
+	st.Derived.OddsDay = odds(hr, blockHashes, 86400)
+	st.Derived.OddsWeek = odds(hr, blockHashes, 7*86400)
+	st.Derived.OddsYear = odds(hr, blockHashes, 365*86400)
+	st.Derived.StaleShares = snap.Pool.Stale
 	if l := snap.Pool.Luck; l.Shares > 0 {
 		v := l.Effort * 100
 		st.Derived.LuckPct = &v
 	}
 	st.Derived.WorkersTotal = len(snap.Workers)
+
+	if len(snap.Aux) > 0 {
+		diff1 := pow.For(s.cfg.Coin).Diff1Hashes
+		chainOdds := func(v *ChainView) {
+			bh := v.NetworkDiff * diff1
+			if hr > 0 && bh > 0 {
+				e := bh / hr
+				v.ExpectedBlockS = &e
+			}
+			v.OddsDay, v.OddsWeek, v.OddsYear = odds(hr, bh, 86400), odds(hr, bh, 7*86400), odds(hr, bh, 365*86400)
+		}
+		parent := ChainView{Merged: true, Connected: snap.Node.Connected, Synced: snap.Node.Synced, ZMQ: snap.Node.ZMQConnected,
+			Height: snap.Node.Height, NetworkDiff: nd, PayoutAddress: st.Stratum.PayoutAddress,
+			BlocksFound: snap.Pool.BlocksFound, BlocksPending: snap.Pool.BlocksPending, EffortPct: st.Derived.LuckPct}
+		for _, b := range snap.Blocks {
+			if b.Status == "accepted" {
+				h := b.Height
+				parent.LastBlock = &h
+			}
+		}
+		chainOdds(&parent)
+		st.Chains = map[string]ChainView{s.cfg.Coin: parent}
+		for name, a := range snap.Aux {
+			v := ChainView{Merged: a.Merged, Reason: a.Reason, Connected: a.Connected, Synced: a.Connected && a.Reason != "node syncing",
+				ZMQ: a.ZMQ, Height: a.Height, NetworkDiff: a.NetworkDiff, PayoutAddress: a.Address}
+			if a.Luck.Shares > 0 {
+				e := a.Luck.Effort * 100
+				v.EffortPct = &e
+			}
+			for _, b := range snap.AuxBlocks {
+				if b.Chain != name {
+					continue
+				}
+				switch b.Status {
+				case "accepted":
+					v.BlocksFound++
+					h := b.Height
+					v.LastBlock = &h
+				case "pending":
+					v.BlocksPending++
+				}
+			}
+			chainOdds(&v)
+			st.Chains[name] = v
+			if st.AuxCoins == nil {
+				st.AuxCoins = map[string]CoinInfo{}
+			}
+			st.AuxCoins[name] = Coins[name]
+		}
+		for i := len(snap.AuxBlocks) - 1; i >= 0 && len(st.AuxBlocks) < maxBlocks; i-- {
+			st.AuxBlocks = append(st.AuxBlocks, snap.AuxBlocks[i])
+		}
+	}
 
 	// Blocks, newest first.
 	st.Blocks = []BlockView{}

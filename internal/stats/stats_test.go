@@ -19,12 +19,12 @@ func TestHashrateWindow(t *testing.T) {
 		now = now.Add(time.Duration(interval * float64(time.Second)))
 	}
 	for _, w := range []time.Duration{5 * time.Minute, time.Hour} {
-		if hr := r.hashrate(now, w); math.Abs(hr/1e12-1) > 0.05 {
+		if hr := r.hashrate(now, w, 4294967296); math.Abs(hr/1e12-1) > 0.05 {
 			t.Errorf("window %v: %g H/s", w, hr)
 		}
 	}
 	// Nothing in the last hour after a long pause.
-	if hr := r.hashrate(now.Add(3*time.Hour), time.Hour); hr != 0 {
+	if hr := r.hashrate(now.Add(3*time.Hour), time.Hour, 4294967296); hr != 0 {
 		t.Errorf("stale buckets counted: %g", hr)
 	}
 }
@@ -34,7 +34,7 @@ func TestCollectorAndPersistence(t *testing.T) {
 	c := New("btc", "test", dir)
 	c.Connected("w1")
 	c.ShareAccepted("w1", 100, 5000, "bip310+xor+or")
-	c.ShareRejected("w1", "stale")
+	c.ShareRejected("w1", "low-difficulty")
 	c.BlockSubmitted(BlockRecord{Height: 10, Hash: "aa", Status: "pending"})
 	if p := c.Snapshot().Pool; p.BlocksFound != 0 || p.BlocksPending != 1 {
 		t.Fatalf("pending block counted as found: %+v", p)
@@ -49,7 +49,7 @@ func TestCollectorAndPersistence(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	WritePrometheus(&buf, s)
-	for _, want := range []string{`wb_blocks_total{coin="btc",status="accepted"} 1`, `wb_shares_total{coin="btc",result="rejected",reason="stale"} 1`, `wb_worker_best_share_difficulty{coin="btc",worker="w1"} 5000`} {
+	for _, want := range []string{`wb_blocks_total{coin="btc",status="accepted"} 1`, `wb_shares_total{coin="btc",result="rejected",reason="low-difficulty"} 1`, `wb_worker_best_share_difficulty{coin="btc",worker="w1"} 5000`} {
 		if !strings.Contains(buf.String(), want) {
 			t.Errorf("metrics missing %q", want)
 		}
@@ -172,6 +172,53 @@ func TestShareCreditedToItsOwnRound(t *testing.T) {
 	}
 }
 
+// An aux (DOGE) block resets only DOGE effort; an LTC block only LTC
+// effort. Both survive a restart; a state file without aux luck loads.
+func TestAuxEffortIsPerChain(t *testing.T) {
+	dir := t.TempDir()
+	c := New("ltc", "t", dir)
+	c.SetTemplate(func(ti *TemplateInfo) { ti.PrevHash = "a"; ti.Height = 10; ti.NetworkDiff = 1000 })
+	c.SetAux("doge", func(a *AuxStatus) { a.Merged = true; a.NetworkDiff = 100 })
+	c.ShareAccepted("w", 10, 20, "x")
+	s := c.Snapshot()
+	if s.Pool.Luck.Effort != 0.01 || s.Aux["doge"].Luck.Effort != 0.1 {
+		t.Fatalf("effort ltc %v doge %v", s.Pool.Luck.Effort, s.Aux["doge"].Luck.Effort)
+	}
+	c.AuxBlockSubmitted(BlockRecord{Chain: "doge", Hash: "d1", Status: "pending"})
+	c.AuxBlockSubmitted(BlockRecord{Chain: "doge", Hash: "d1", Status: "accepted"})
+	s = c.Snapshot()
+	if s.Aux["doge"].Luck.Effort != 0 || s.Pool.Luck.Effort != 0.01 {
+		t.Fatalf("DOGE block reset: ltc %v doge %v", s.Pool.Luck.Effort, s.Aux["doge"].Luck.Effort)
+	}
+	c.ShareAccepted("w", 10, 20, "x")
+	c.BlockSubmitted(BlockRecord{Hash: "l1", Status: "accepted"})
+	s = c.Snapshot()
+	if s.Pool.Luck.Effort != 0 || s.Aux["doge"].Luck.Effort != 0.1 {
+		t.Fatalf("LTC block reset: ltc %v doge %v", s.Pool.Luck.Effort, s.Aux["doge"].Luck.Effort)
+	}
+	// Not merged: no DOGE effort accrues.
+	c.SetAux("doge", func(a *AuxStatus) { a.Merged = false; a.Reason = "node down" })
+	c.ShareAccepted("w", 10, 20, "x")
+	if e := c.Snapshot().Aux["doge"].Luck.Effort; e != 0.1 {
+		t.Fatalf("effort accrued while not merged: %v", e)
+	}
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	c2 := New("ltc", "t", dir)
+	if e := c2.Snapshot().Aux["doge"].Luck.Effort; e != 0.1 || len(c2.AuxBlocks()) != 1 {
+		t.Fatalf("after restart: doge effort %v, aux blocks %d", e, len(c2.AuxBlocks()))
+	}
+	// Metrics carry the DOGE series beside the LTC ones.
+	var b bytes.Buffer
+	WritePrometheus(&b, c2.Snapshot())
+	for _, want := range []string{`wb_blocks_total{coin="doge",status="accepted"} 1`, `wb_merged{coin="doge"} 0`, `wb_effort_ratio{coin="doge"} 0.1`} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("metrics missing %q", want)
+		}
+	}
+}
+
 // The live figure is the average of the 3.5 minutes before the last minute
 // boundary: it stays the same throughout a minute and changes only at the
 // next boundary.
@@ -189,16 +236,16 @@ func TestHashrateLiveChangesOncePerMinute(t *testing.T) {
 		}
 	}
 	h1 := 4294967296.0 // 1 share/s at difficulty 1
-	if got := r.live(t0.Add(30 * time.Second)); got != 0 {
+	if got := r.live(t0.Add(30*time.Second), 4294967296); got != 0 {
 		t.Fatalf("during the first minute: %g, want 0", got)
 	}
 	for s := 240; s < 300; s++ { // window [30s, 240s): all at 1/s
-		if got := r.live(t0.Add(time.Duration(s) * time.Second)); got != h1 {
+		if got := r.live(t0.Add(time.Duration(s)*time.Second), 4294967296); got != h1 {
 			t.Fatalf("at %ds: %g, want %g (unchanged all minute)", s, got, h1)
 		}
 	}
 	// At 300 s the window is [90s, 300s): 150 s at 1/s + 60 s at 2/s.
-	if got, want := r.live(t0.Add(300*time.Second)), h1*(150+120)/210; got != want {
+	if got, want := r.live(t0.Add(300*time.Second), 4294967296), h1*(150+120)/210; got != want {
 		t.Fatalf("at 300s: %g, want %g", got, want)
 	}
 	// A worker that started 30 s into a minute: averaged over its 30 s.
@@ -206,7 +253,7 @@ func TestHashrateLiveChangesOncePerMinute(t *testing.T) {
 	for s := 30; s < 60; s++ {
 		y.add(t0.Add(time.Duration(s)*time.Second), 1)
 	}
-	if got := y.live(t0.Add(75 * time.Second)); got != h1 {
+	if got := y.live(t0.Add(75*time.Second), 4294967296); got != h1 {
 		t.Fatalf("young worker: %g, want %g", got, h1)
 	}
 }
@@ -227,5 +274,31 @@ func TestPoolLiveIsSumOfWorkers(t *testing.T) {
 	}
 	if s.Pool.HashrateLive != sum {
 		t.Fatalf("pool live %g, sum of workers %g", s.Pool.HashrateLive, sum)
+	}
+}
+
+// A stale share was valid when found: it is counted as stale, not as a
+// reject, and it has no entry among the reject reasons.
+func TestStaleIsNotRejected(t *testing.T) {
+	c := New("ltc", "test", "")
+	c.Connected("w1")
+	c.ShareAccepted("w1", 100, 100, "")
+	c.ShareRejected("w1", "stale")
+	c.ShareRejected("w1", "stale")
+	c.ShareRejected("w1", "duplicate")
+	s := c.Snapshot()
+	if s.Pool.Stale != 2 || s.Pool.Rejected != 1 || s.Pool.Rejects["stale"] != 0 || s.Pool.Rejects["duplicate"] != 1 {
+		t.Fatalf("pool: stale %d rejected %d rejects %v", s.Pool.Stale, s.Pool.Rejected, s.Pool.Rejects)
+	}
+	w := s.Workers[0]
+	if w.Stale != 2 || w.Rejected != 1 || w.Rejects["stale"] != 0 {
+		t.Fatalf("worker: stale %d rejected %d rejects %v", w.Stale, w.Rejected, w.Rejects)
+	}
+	var buf bytes.Buffer
+	WritePrometheus(&buf, s)
+	for _, want := range []string{`wb_shares_total{coin="ltc",result="stale",reason=""} 2`, `wb_worker_shares_total{coin="ltc",worker="w1",result="stale"} 2`, `wb_worker_shares_total{coin="ltc",worker="w1",result="rejected"} 1`} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("metrics missing %q", want)
+		}
 	}
 }

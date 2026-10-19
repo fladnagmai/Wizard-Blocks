@@ -64,7 +64,7 @@ func TestFileAndValidation(t *testing.T) {
 		t.Fatalf("unknown field accepted: %v", err)
 	}
 	bad := []map[string]string{
-		{"WB_COIN": "ltc"},
+		{"WB_COIN": "eth"},
 		{"WB_VERSION_ROLLING_MASK": "ffffffff"},
 		{"WB_VERSION_ROLLING_MASK": "xyz"},
 		{"WB_EXTRANONCE2_SIZE": "1"},
@@ -164,5 +164,34 @@ func TestEnvFileOverrides(t *testing.T) {
 	base["WB_ENV_FILE"] = p
 	if _, _, err := WithEnvFile(func(k string) string { return base[k] }); err == nil {
 		t.Fatal("non-WB_ key accepted")
+	}
+}
+
+func TestLTCVardiffDefaults(t *testing.T) {
+	env := map[string]string{"WB_RPC_USER": "u", "WB_RPC_PASSWORD": "p", "WB_COIN": "ltc", "WB_PAYOUT_ADDRESS": "x"}
+	c, err := Load("", func(k string) string { return env[k] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Vardiff.Initial != 262144 || c.Vardiff.Min != 1024 {
+		t.Fatalf("LTC defaults: initial %v min %v", c.Vardiff.Initial, c.Vardiff.Min)
+	}
+	if c.UI.Style != "stats" {
+		t.Fatalf("LTC default page: %q, want stats", c.UI.Style)
+	}
+	// An explicit choice is kept (the user's usual 200000).
+	env["WB_VARDIFF_INITIAL"] = "200000"
+	c, _ = Load("", func(k string) string { return env[k] })
+	if c.Vardiff.Initial != 200000 {
+		t.Fatalf("explicit initial overridden: %v", c.Vardiff.Initial)
+	}
+	// BTC keeps its own defaults.
+	env = map[string]string{"WB_RPC_USER": "u", "WB_RPC_PASSWORD": "p", "WB_COIN": "btc", "WB_PAYOUT_ADDRESS": "x"}
+	c, _ = Load("", func(k string) string { return env[k] })
+	if c.Vardiff.Initial != 65536 || c.Vardiff.Min != 1 {
+		t.Fatalf("BTC defaults changed: %v %v", c.Vardiff.Initial, c.Vardiff.Min)
+	}
+	if c.UI.Style != "" {
+		t.Fatalf("BTC page changed: %q", c.UI.Style)
 	}
 }

@@ -24,6 +24,23 @@ type Node struct {
 	RPCTimeoutS      int    `json:"rpc_timeout_s"`
 }
 
+// Doge configures Dogecoin merged mining on top of a Litecoin parent. It
+// is off when RPCURL is empty; with a node but no PayoutAddress the engine
+// mines Litecoin only and says so.
+type Doge struct {
+	RPCURL         string `json:"rpc_url"`
+	RPCUser        string `json:"rpc_user"`
+	RPCPassword    string `json:"rpc_password"`
+	RPCCookieFile  string `json:"rpc_cookie_file"`
+	ZMQHashBlock   string `json:"zmq_hashblock"`
+	PayoutAddress  string `json:"payout_address"`
+	PollIntervalMs int    `json:"poll_interval_ms"`
+	RefreshS       int    `json:"refresh_s"`
+}
+
+// Enabled reports whether a Dogecoin node is configured.
+func (d Doge) Enabled() bool { return d.RPCURL != "" }
+
 // Payout configures where block rewards go.
 type Payout struct {
 	Mode        string `json:"mode"` // fixed | miner
@@ -73,8 +90,9 @@ type UI struct {
 	// sits behind an authenticating reverse proxy (e.g. Umbrel's app_proxy).
 	// A password can still be set from the Settings page.
 	SettingsOpen bool `json:"settings_open"`
-	// Style picks the page: "mine" (the pixel-art Mine and Ledger, default)
-	// or "simple" (one plain stats page, used by the BTC Umbrel app).
+	// Style picks the page: "mine" (the pixel-art Mine and Ledger, default),
+	// "simple" (one stats page, used by the BTC Umbrel app) or "stats" (plain
+	// text pool and miner hashrates, the LTC default).
 	Style string `json:"style"`
 }
 
@@ -88,6 +106,7 @@ type Log struct {
 type Config struct {
 	Coin    string  `json:"coin"`
 	Node    Node    `json:"node"`
+	Doge    Doge    `json:"doge"`
 	Payout  Payout  `json:"payout"`
 	Stratum Stratum `json:"stratum"`
 	Vardiff Vardiff `json:"vardiff"`
@@ -97,11 +116,24 @@ type Config struct {
 	DataDir string  `json:"data_dir"`
 }
 
+// SHAStartDiff is the BCH/BTC start difficulty: a rented 1 EH/s on one
+// connection sends ~3500 shares/s here for the instant before vardiff's
+// first step (well within the message burst), and a 1.2 TH/s Bitaxe gets
+// its difficulty probed down within a minute or two.
+const SHAStartDiff = 65536
+
+// LTC vardiff defaults (Scrypt share units).
+const (
+	LTCStartDiff = 262144
+	LTCMinDiff   = 1024
+)
+
 // Default returns the default configuration.
 func Default() Config {
 	return Config{
 		Coin: "btc",
 		Node: Node{RPCURL: "http://127.0.0.1:8332", PollIntervalMs: 1000, TemplateRefreshS: 30, RPCTimeoutS: 30},
+		Doge: Doge{PollIntervalMs: 1000, RefreshS: 5},
 		Payout: Payout{
 			Mode: "fixed", CoinbaseTag: "/wizard-blocks/",
 		},
@@ -110,7 +142,7 @@ func Default() Config {
 			MaxConnections: 1024, MaxConnsPerIP: 64, AuthTimeoutS: 60, IdleTimeoutS: 600,
 			MaxLineBytes: 16384, MsgRatePerS: 100, MsgBurst: 500,
 		},
-		Vardiff: Vardiff{Initial: 1024, Min: 1, Max: 1e15, TargetShareS: 10, RetargetS: 60, VariancePct: 30},
+		Vardiff: Vardiff{Initial: SHAStartDiff, Min: 1, Max: 1e15, TargetShareS: 10, RetargetS: 60, VariancePct: 30},
 		API:     API{Listen: "127.0.0.1:8080", Prometheus: true},
 		UI:      UI{Listen: "0.0.0.0:8420"},
 		Log:     Log{Level: "info", Format: "json"},
@@ -134,6 +166,20 @@ func Load(path string, env func(string) string) (Config, error) {
 	if err := c.applyEnv(env); err != nil {
 		return c, err
 	}
+	// Scrypt share difficulty is 65536x easier per unit than SHA-256d, so
+	// the SHA-256d defaults would be far too low: when vardiff was left at
+	// its defaults, LTC starts at 262144 (the Elphapex DG Home 1's own
+	// default, ~8 s per share at 2.1 GH/s) with a floor of 1024.
+	if strings.EqualFold(c.Coin, "ltc") {
+		def := Default().Vardiff
+		if c.Vardiff.Initial == def.Initial && c.Vardiff.Min == def.Min {
+			c.Vardiff.Initial, c.Vardiff.Min = LTCStartDiff, LTCMinDiff
+		}
+		// The LTC app's page is the plain stats page unless one was chosen.
+		if c.UI.Style == "" {
+			c.UI.Style = "stats"
+		}
+	}
 	// An empty env value means "unset", so "off" is how env disables the UI.
 	if strings.EqualFold(c.UI.Listen, "off") {
 		c.UI.Listen = ""
@@ -149,7 +195,10 @@ func (c *Config) applyEnv(env func(string) string) error {
 		"WB_PAYOUT_ADDRESS": &c.Payout.Address, "WB_COINBASE_TAG": &c.Payout.CoinbaseTag,
 		"WB_STRATUM_LISTEN": &c.Stratum.Listen, "WB_VERSION_ROLLING_MASK": &c.Stratum.VersionRollingMask,
 		"WB_API_LISTEN": &c.API.Listen, "WB_LOG_LEVEL": &c.Log.Level, "WB_LOG_FORMAT": &c.Log.Format,
-		"WB_DATA_DIR": &c.DataDir, "WB_UI_LISTEN": &c.UI.Listen, "WB_UI_STYLE": &c.UI.Style, "WB_UI_ADMIN_PASSWORD": &c.UI.AdminPassword,
+		"WB_DOGE_RPC_URL": &c.Doge.RPCURL, "WB_DOGE_RPC_USER": &c.Doge.RPCUser, "WB_DOGE_RPC_PASSWORD": &c.Doge.RPCPassword,
+		"WB_DOGE_RPC_COOKIE_FILE": &c.Doge.RPCCookieFile, "WB_DOGE_ZMQ_HASHBLOCK": &c.Doge.ZMQHashBlock,
+		"WB_DOGE_PAYOUT_ADDRESS": &c.Doge.PayoutAddress,
+		"WB_DATA_DIR":            &c.DataDir, "WB_UI_LISTEN": &c.UI.Listen, "WB_UI_STYLE": &c.UI.Style, "WB_UI_ADMIN_PASSWORD": &c.UI.AdminPassword,
 	}
 	for k, p := range str {
 		if v, ok := lookup(env, k); ok {
@@ -160,6 +209,7 @@ func (c *Config) applyEnv(env func(string) string) error {
 		"WB_POLL_INTERVAL_MS": &c.Node.PollIntervalMs, "WB_TEMPLATE_REFRESH_S": &c.Node.TemplateRefreshS,
 		"WB_EXTRANONCE2_SIZE": &c.Stratum.Extranonce2Size, "WB_MAX_CONNECTIONS": &c.Stratum.MaxConnections,
 		"WB_MAX_CONNECTIONS_PER_IP": &c.Stratum.MaxConnsPerIP, "WB_STRATUM_PUBLIC_PORT": &c.Stratum.PublicPort,
+		"WB_DOGE_POLL_INTERVAL_MS": &c.Doge.PollIntervalMs, "WB_DOGE_REFRESH_S": &c.Doge.RefreshS,
 	}
 	for k, p := range ints {
 		if v, ok := lookup(env, k); ok {
@@ -241,8 +291,8 @@ func (c *Config) Validate() error {
 	var errs []error
 	add := func(f string, a ...any) { errs = append(errs, fmt.Errorf(f, a...)) }
 	c.Coin = strings.ToLower(c.Coin)
-	if c.Coin != "btc" && c.Coin != "bch" {
-		add("coin must be btc or bch, got %q", c.Coin)
+	if c.Coin != "btc" && c.Coin != "bch" && c.Coin != "ltc" {
+		add("coin must be btc, bch or ltc, got %q", c.Coin)
 	}
 	if c.Node.RPCURL == "" {
 		add("node.rpc_url is required")
@@ -262,6 +312,25 @@ func (c *Config) Validate() error {
 	if c.Node.RPCTimeoutS < 1 {
 		add("node.rpc_timeout_s must be positive")
 	}
+	if c.Doge.Enabled() {
+		if c.Coin != "ltc" {
+			add("doge merged mining needs coin ltc (the Scrypt parent), got %q", c.Coin)
+		}
+		if c.Doge.RPCUser == "" && c.Doge.RPCCookieFile == "" {
+			add("doge.rpc_user/rpc_password or doge.rpc_cookie_file is required")
+		}
+		if c.Doge.ZMQHashBlock != "" && !strings.HasPrefix(c.Doge.ZMQHashBlock, "tcp://") {
+			add("doge.zmq_hashblock must be tcp://host:port")
+		}
+		if c.Doge.PollIntervalMs < 100 || c.Doge.PollIntervalMs > 60000 {
+			add("doge.poll_interval_ms must be 100..60000")
+		}
+		if c.Doge.RefreshS < 1 || c.Doge.RefreshS > 600 {
+			add("doge.refresh_s must be 1..600")
+		}
+	} else if c.Doge.PayoutAddress != "" {
+		add("doge.payout_address is set but no doge.rpc_url")
+	}
 	switch c.Payout.Mode {
 	case "fixed":
 		// Without an address the engine can still start when the payout
@@ -275,9 +344,9 @@ func (c *Config) Validate() error {
 		add("payout.mode must be fixed or miner, got %q", c.Payout.Mode)
 	}
 	switch c.UI.Style {
-	case "", "mine", "simple":
+	case "", "mine", "simple", "stats":
 	default:
-		add("ui.style must be mine or simple, got %q", c.UI.Style)
+		add("ui.style must be mine, simple or stats, got %q", c.UI.Style)
 	}
 	if len(c.Payout.CoinbaseTag) > 60 {
 		add("payout.coinbase_tag must be at most 60 bytes")

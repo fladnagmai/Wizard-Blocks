@@ -75,6 +75,10 @@ type Session struct {
 	done      chan struct{}
 
 	// Token bucket for inbound message rate limiting (reader goroutine only).
+	// An accepted share gives its token back: it is proven work at the
+	// difficulty this pool set, so the allowance grows with the work a
+	// miner actually does (a big miner on one connection is never cut off
+	// while vardiff catches up); everything else counts.
 	tokens     float64
 	tokensAt   time.Time
 	badMsgs    int
@@ -104,7 +108,7 @@ func newSession(s *Server, conn net.Conn, ip string, en1 uint32) *Session {
 		out: make(chan []byte, 64), done: make(chan struct{}),
 		tokens: s.cfg.MsgBurst, tokensAt: time.Now(),
 		workers: map[string]bool{}, jobs: map[string]sessJob{},
-		diff: s.diffs.Load().Clamp(s.cfg.Vardiff.Initial),
+		diff: s.diffs.Load().StartDiff(s.cfg.Vardiff.Initial),
 		vd:   newVardiff(s.cfg.Vardiff, time.Now()),
 	}
 }
@@ -228,6 +232,11 @@ func (c *Session) allow() bool {
 	}
 	c.tokens--
 	return true
+}
+
+// refundToken gives back the token of an accepted share (reader goroutine).
+func (c *Session) refundToken() {
+	c.tokens = math.Min(c.srv.cfg.MsgBurst, c.tokens+1)
 }
 
 // rawSample quotes the start of a raw message for the logs.
@@ -398,7 +407,7 @@ func (c *Session) fixedLocked(ds *DiffSettings) (float64, bool) {
 	if v, ok := ds.OverrideFor(sortedKeys(c.workers, c.primary)); ok {
 		return v, true
 	}
-	if c.pwDiff > 0 {
+	if c.pwDiff > 0 && !ds.IgnorePasswordDiff {
 		return ds.Clamp(c.pwDiff), true
 	}
 	if ds.FixedDiff > 0 {
@@ -510,7 +519,7 @@ func (c *Session) handleSuggestDifficulty(req request) {
 	}
 	c.mu.Lock()
 	ds := c.srv.diffs.Load()
-	if _, fixed := c.fixedLocked(ds); !fixed {
+	if _, fixed := c.fixedLocked(ds); !fixed && !ds.IgnoreSuggest {
 		c.diff = ds.Clamp(ps[0]) // a suggestion: vardiff continues from here
 	}
 	started := c.started
@@ -540,7 +549,10 @@ func (c *Session) maybeStart() {
 // every block-solving hash is also a valid share the miner will submit.
 func effectiveDiff(d float64, w *work.Work) float64 {
 	if nd := w.Tmpl.NetworkDiff; nd > 0 && d > nd {
-		return nd
+		d = nd
+	}
+	if w.Aux != nil && w.Aux.MinDiff > 0 && d > w.Aux.MinDiff {
+		d = w.Aux.MinDiff
 	}
 	return d
 }
@@ -561,6 +573,9 @@ func (c *Session) sendWork(w *work.Work) {
 	clean := w.Clean || !c.started
 	if c.lastWork != nil && c.lastWork.Gen != w.Gen {
 		clean = true
+	}
+	if !c.started {
+		c.vd.reset(time.Now()) // vardiff timing starts with the first job
 	}
 	c.started = true
 	c.lastWork = w
@@ -734,23 +749,33 @@ func (c *Session) handleSubmit(req request) {
 	}
 
 	required := math.Min(sj.diff, curDiff)
-	shareTarget := bitcoin.TargetFromDifficulty(required)
+	algo := c.srv.mgr.PoW()
+	shareTarget := algo.ShareTarget(required)
+	powHash := func(h bitcoin.Header) bitcoin.Hash { b := h.Serialize(); return algo.PoWHash(b[:]) }
 
 	// Evaluate every admissible interpretation and keep the lowest hash. On
 	// mainnet at most one can meet a real target (and they coincide unless the
 	// template signals inside the mask); on test chains with trivial targets
 	// this picks the header the miner actually worked on.
 	hdr := job.Header(c.en1Bytes, en2, ntime, nonce, cands[0].version)
-	hash := hdr.Hash()
+	hash := powHash(hdr) // the work hash (SHA-256d, or Scrypt for LTC); the block's id stays SHA-256d
 	interp := cands[0].interp
 	for _, vc := range cands[1:] {
 		h := job.Header(c.en1Bytes, en2, ntime, nonce, vc.version)
-		if hh := h.Hash(); bitcoin.HashToBig(hh).Cmp(bitcoin.HashToBig(hash)) < 0 {
+		if hh := powHash(h); bitcoin.HashToBig(hh).Cmp(bitcoin.HashToBig(hash)) < 0 {
 			hdr, hash, interp = h, hh, vc.interp
 		}
 	}
-	achieved := bitcoin.HashDifficulty(hash)
+	achieved := algo.HashDifficulty(hash)
 	stale := job.Gen < c.srv.mgr.CurrentGen()
+
+	// Merged mining: the same header may solve an aux block (Dogecoin),
+	// whatever it means for the parent; the aux node judges whether its
+	// block is still current.
+	if job.Aux != nil {
+		c.srv.mgr.SubmitAux(work.Candidate{Job: job, Header: hdr, En1: c.en1Bytes, En2: en2,
+			Worker: worker, ShareDiff: achieved, Stale: stale, VersionInterp: interp}, hash)
+	}
 
 	// Block check first and independently of the share target: a solved
 	// block is submitted immediately, before any bookkeeping.
@@ -793,6 +818,7 @@ func effectiveDiffOrRaw(d float64, w *work.Work) float64 {
 // accept answers a valid share; prevHash is the previous-block hash of the
 // job it was mined on, so stats credit the right round.
 func (c *Session) accept(id json.RawMessage, prevHash, worker string, credited, achieved float64, interp string, hash bitcoin.Hash) {
+	c.refundToken()
 	c.reply(id, true, nil)
 	c.srv.st.ShareAcceptedOn(prevHash, worker, credited, achieved, interp)
 	c.srv.log.Debug("share accepted", "ip", c.ip, "worker", worker, "hash", hash.String(),
