@@ -24,6 +24,9 @@ zero on the commit that gets built), then ask before building or pinning.
 ## BCH stuff
 - Stale shares are no longer counted as rejected (same shared engine change,
   d1692d6). Reaches the BCH app only when it gets the new image.
+- NOTE: on the unify-ui branch the BCH app uses the BTC page, so the
+  pixel-art party below is not shown by any app. The rule stays here in case
+  the game page comes back.
 - Name change fix for the pixel-art party (internal/ui/static/js/app.js,
   `CHARACTERS` and `syncParty`). Today the wizard is always called "ernie" and
   each character is tied to one fixed miner name. Wanted:
