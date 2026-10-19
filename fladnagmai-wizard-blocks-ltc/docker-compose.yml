@@ -11,7 +11,7 @@ services:
   engine:
     # Wizard-Blocks engine test build with Litecoin + Dogecoin merged mining
     # (.github/workflows/image.yml run on the phase4-fix branch).
-    image: ghcr.io/fladnagmai/wizard-blocks:0.2.0-test2
+    image: ghcr.io/fladnagmai/wizard-blocks:0.2.0-test2@sha256:b98732cb35c48f567955a509c28d3b71b16af095b9467354f46abeba50ccf1f6
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 90s          # lets an in-flight block submission finish
