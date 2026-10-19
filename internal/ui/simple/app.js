@@ -90,6 +90,8 @@ function render(st) {
   const coin = st.coin || {}, ticker = coin.ticker || '';
   $('title').textContent = 'WIZARD-BLOCKS' + (ticker ? '-' + ticker : '');
   document.title = 'Wizard-Blocks' + (ticker ? '-' + ticker : '');
+  document.documentElement.dataset.coin = coin.coin || '';
+  $('testnote').hidden = !/test/i.test(st.version || '');
   const hint = (coin.address_hint || {})[st.chain] || '';
   $('s-addr').placeholder = hint;
   $('s-addr-label').textContent = `${ticker || 'Payout'} payout address${hint ? ' (' + hint + ')' : ''}`;
@@ -101,6 +103,8 @@ function render(st) {
   document.querySelectorAll('.chaincol').forEach((el) => { el.hidden = !auxName; });
   if (auxName) {
     const aux = chains[auxName], auxCoin = (st.aux_coins || {})[auxName] || { ticker: auxName.toUpperCase() };
+    $('title').textContent += ' + ' + auxCoin.ticker;
+    document.title += ' + ' + auxCoin.ticker;
     renderChain('cp', ticker, chains[coin.coin] || {}, false);
     renderChain('ca', `${auxCoin.ticker} (MERGED)`, aux, true);
     $('banner').hidden = !!aux.merged;
@@ -113,6 +117,8 @@ function render(st) {
   set('n-height', fmtInt(n.height));
   set('n-zmq', !n.zmq_enabled ? 'off (polling)' : n.zmq_connected ? 'connected' : 'not connected', n.zmq_enabled && !n.zmq_connected);
   set('n-chain', n.chain || st.chain || '—');
+  const bc = t.block_check || '';
+  set('n-check', bc ? `${bc} (height ${fmtInt(t.block_check_height)}, ${ago(t.block_check_at)})` : 'waiting for the first job', bc.startsWith('REJECTED'));
 
   set('p-hr1', fmtHash(p.hashrate_live));
   set('p-hr5', fmtHash(p.hashrate_5m));
@@ -141,8 +147,9 @@ function render(st) {
     <td class="num">${esc(fmtHash(w.hashrate_live))}</td>
     <td class="num">${esc(fmtDiff(w.difficulty))}</td>
     <td class="num">${esc(fmtInt(w.shares_accepted))} / ${esc(fmtInt(w.shares_rejected))}</td>
+    <td class="num">${esc(fmtInt(w.shares_stale))}</td>
     <td class="num">${esc(fmtDiff(w.best_share_difficulty))}</td>
-    <td class="num">${esc(ago(w.last_share_at))}</td></tr>`).join('') : '<tr><td colspan="6" class="dim">No miners yet.</td></tr>';
+    <td class="num">${esc(ago(w.last_share_at))}</td></tr>`).join('') : '<tr><td colspan="7" class="dim">No miners yet.</td></tr>';
 
   // Real blocks only (newest first): candidates that never made the chain
   // (stale, rejected) are left out.
@@ -189,6 +196,8 @@ async function syncSession() {
     $('diff').hidden = locked;
     if (!locked) loadDiff();
     $('s-rmpw').hidden = !s.password_set || s.env_password;
+    $('s-logout').hidden = !(s.password_required && s.authed);
+    if (!locked) loadLimits();
     $('s-setpw').textContent = s.password_set ? 'Change' : 'Set';
     if (!s.enabled) msg('Settings are disabled on this engine.', true);
   } catch (e) { msg(e.message, true); }
@@ -212,6 +221,35 @@ $('s-setpw').addEventListener('click', async () => {
 });
 $('s-rmpw').addEventListener('click', async () => {
   try { await api('api/admin/password', 'DELETE'); msg('Settings password removed.'); syncSession(); } catch (e) { msg(e.message, true); }
+});
+
+$('s-logout').addEventListener('click', async () => {
+  try { await api('api/admin/logout', 'POST'); msg('Logged out.'); syncSession(); } catch (e) { msg(e.message, true); }
+});
+
+// Connection limits (total and per IP). Hidden if the engine does not offer them.
+function fillLimits(r) {
+  $('s-maxconn').value = r.limits.max_connections;
+  $('s-maxip').value = r.limits.max_connections_per_ip;
+  $('s-maxconn').title = `default ${r.defaults.max_connections}, max ${r.max}`;
+  $('s-maxip').title = `default ${r.defaults.max_connections_per_ip}`;
+}
+async function loadLimits() {
+  try { fillLimits(await api('api/admin/limits', 'GET')); $('s-lim-wrap').hidden = false; } catch (e) { $('s-lim-wrap').hidden = true; }
+}
+$('s-lim-save').addEventListener('click', async () => {
+  try {
+    const r = await api('api/admin/limits', 'PUT', { max_connections: Number($('s-maxconn').value), max_connections_per_ip: Number($('s-maxip').value) });
+    fillLimits(r);
+    msg(`Connection limits saved: ${r.limits.max_connections} total, ${r.limits.max_connections_per_ip} per IP.`);
+  } catch (e) { msg(e.message, true); }
+});
+$('s-lim-reset').addEventListener('click', async () => {
+  try {
+    const r = await api('api/admin/limits', 'DELETE');
+    fillLimits(r);
+    msg(`Connection limits back to the defaults: ${r.limits.max_connections} total, ${r.limits.max_connections_per_ip} per IP.`);
+  } catch (e) { msg(e.message, true); }
 });
 
 $('s-doge').addEventListener('input', () => { $('s-doge').dataset.dirty = '1'; });

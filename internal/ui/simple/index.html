@@ -18,6 +18,7 @@
   </header>
 
   <div id="banner" class="banner" role="status" hidden></div>
+  <div id="testnote" class="banner" role="status" hidden>TEST BUILD: not yet checked against a real mainnet MWEB block. Use for testing.</div>
 
   <div class="grid2" id="chains" hidden>
     <section class="panel" id="chain-parent">
@@ -54,6 +55,7 @@
         <dt>Height</dt><dd id="n-height">—</dd>
         <dt>ZMQ</dt><dd id="n-zmq">—</dd>
         <dt>Chain</dt><dd id="n-chain">—</dd>
+        <dt>Block check</dt><dd id="n-check">—</dd>
       </dl>
     </section>
 
@@ -91,8 +93,12 @@
           <div class="row"><input id="s-doge" spellcheck="false" autocomplete="off" placeholder="D…"><button id="s-doge-save">Save</button></div>
           <p class="dim small">Set it to also mine Dogecoin with the same hashrate. Checked by your Dogecoin node. Leave empty for Litecoin only.</p>
         </div>
+        <div id="s-lim-wrap" hidden>
+          <label for="s-maxconn">Connection limits: total / per IP (new connections only)</label>
+          <div class="row"><input id="s-maxconn" type="number" min="1" inputmode="numeric"><input id="s-maxip" type="number" min="1" inputmode="numeric"><button id="s-lim-save">Save</button><button id="s-lim-reset">Defaults</button></div>
+        </div>
         <label for="s-pw">Settings password (optional)</label>
-        <div class="row"><input id="s-pw" type="password" autocomplete="new-password" placeholder="8+ characters"><button id="s-setpw">Set</button><button id="s-rmpw" hidden>Remove</button></div>
+        <div class="row"><input id="s-pw" type="password" autocomplete="new-password" placeholder="8+ characters"><button id="s-setpw">Set</button><button id="s-rmpw" hidden>Remove</button><button id="s-logout" hidden>Log out</button></div>
       </div>
       <p id="s-msg" class="small" role="status"></p>
     </section>
@@ -120,8 +126,8 @@
   <section class="panel">
     <h2>WORKERS</h2>
     <div class="scroll"><table>
-      <thead><tr><th>Name</th><th class="num">Hashrate</th><th class="num">Diff</th><th class="num">Acc / Rej</th><th class="num">Best share</th><th class="num">Last share</th></tr></thead>
-      <tbody id="workers"><tr><td colspan="6" class="dim">No miners yet.</td></tr></tbody>
+      <thead><tr><th>Name</th><th class="num">Hashrate</th><th class="num">Diff</th><th class="num">Acc / Rej</th><th class="num">Stale</th><th class="num">Best share</th><th class="num">Last share</th></tr></thead>
+      <tbody id="workers"><tr><td colspan="7" class="dim">No miners yet.</td></tr></tbody>
     </table></div>
   </section>
 

@@ -1,4 +1,8 @@
-:root { --g: #00ff41; --g2: #00c832; --dim: #0b8f2f; --panel: rgba(0, 0, 0, 0.78); --red: #ff4d4d; }
+:root { --g: #00ff41; --g2: #00c832; --dim: #0b8f2f; --hov: #002a0b; --line: rgba(0, 255, 65, 0.12); --panel: rgba(0, 0, 0, 0.78); --red: #ff4d4d; --aux: #e2b93b; }
+/* Each coin's own accent; the layout is the same for all of them. */
+:root[data-coin="btc"] { --g: #f7931a; --g2: #d97f10; --dim: #9a5c0f; --hov: #2e1a03; --line: rgba(247, 147, 26, 0.14); }
+:root[data-coin="bch"] { --g: #0ac18e; --g2: #09a478; --dim: #07785a; --hov: #022a1f; --line: rgba(10, 193, 142, 0.14); }
+:root[data-coin="ltc"] { --g: #8fb4ff; --g2: #6f97e8; --dim: #4f6aa0; --hov: #0d1830; --line: rgba(143, 180, 255, 0.14); }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { margin: 0; min-height: 100%; background: #000; }
@@ -36,13 +40,13 @@ button {
   background: #000; color: var(--g); border: 1px solid var(--g); font: inherit; padding: 6px 12px;
   min-height: 36px; cursor: pointer;
 }
-button:hover { background: #002a0b; }
+button:hover { background: var(--hov); }
 button:focus-visible, input:focus-visible { outline: 1px solid var(--g); outline-offset: 2px; }
 .scroll { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 5px 10px 5px 0; white-space: nowrap; }
 th { color: var(--dim); font-weight: bold; border-bottom: 1px solid var(--dim); }
-td { border-bottom: 1px solid rgba(0, 255, 65, 0.12); }
+td { border-bottom: 1px solid var(--line); }
 .num { text-align: right; }
 a { color: var(--g); }
 #s-msg { min-height: 1.5em; margin: 8px 0 0; }
@@ -58,3 +62,5 @@ input.short { width: 5em; flex: none; }
 code { color: var(--g); }
 #d-msg { min-height: 1.5em; margin: 8px 0 0; }
 @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } .dgrid { grid-template-columns: 1fr 1fr; } }
+
+#ca-title { color: var(--aux); }
