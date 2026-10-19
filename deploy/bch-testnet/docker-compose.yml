@@ -31,8 +31,8 @@ services:
     # No RPC/ZMQ ports are published: only the engine talks to the node.
 
   engine:
-    build: ../..
-    image: wizard-blocks:local
+    # The published release image (the one the Umbrel apps run).
+    image: ${ENGINE_IMAGE:-ghcr.io/fladnagmai/wizard-blocks:0.1.9-alpha@sha256:cb61e983c9ac324f12ae343e8342cbc4118e563a017abbe917a03b78e21c0c04}
     restart: unless-stopped
     stop_grace_period: 90s                   # let an in-flight block submission finish
     depends_on: [bchn]
@@ -56,6 +56,7 @@ services:
       WB_UI_ADMIN_PASSWORD: ${UI_ADMIN_PASSWORD:-}
       WB_LOG_LEVEL: ${LOG_LEVEL:-info}
       WB_LOG_FORMAT: text
+      WB_UI_STYLE: simple
     ports:
       - "${STRATUM_PORT:-3335}:3333"           # miners on your LAN
       - "${UI_PORT:-8421}:8420"                # web UI on your LAN
