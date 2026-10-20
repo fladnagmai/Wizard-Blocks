@@ -42,8 +42,12 @@ const (
 	dogeVersion = "1.14.9"
 	dogeSHA256  = "4f227117b411a7c98622c970986e27bcfc3f547a72bef65e7d9e82989175d4f8" // SHA256SUMS.asc, signed by DC6EF4A8BF9F1B1E4DE1EE522D3A345B98D0DC1F
 	dogeImage   = "wbit-dogecoind:" + dogeVersion
-	rpcUser     = "wbtest"
-	rpcPass     = "wbtestpass"
+	// Pepecoin Core, likewise (pepecoind/Dockerfile).
+	pepVersion = "1.1.0"
+	pepSHA256  = "9d7ef948e5726c9941cbc5307b4a0b725edc715bc10ed5515154485faecd710b" // SHA256SUMS.asc, signed by 18250EC92E527E9723E49116FD415169D2691927
+	pepImage   = "wbit-pepecoind:" + pepVersion
+	rpcUser    = "wbtest"
+	rpcPass    = "wbtestpass"
 )
 
 // Run accounting: every top-level test calls track, and TestMain prints how
@@ -122,6 +126,9 @@ func startNode(t *testing.T, coin, network, name string, extra ...string) *Node 
 	case "doge":
 		ensureDogecoinImage(t)
 		image, entry = dogeImage, "dogecoind"
+	case "pep":
+		ensurePepecoinImage(t)
+		image, entry = pepImage, "pepecoind"
 	default:
 		image = bchImage
 	}
@@ -380,6 +387,12 @@ func ensureDogecoinImage(t *testing.T) {
 	ensureReleaseImage(t, dogeImage, "dogecoind", "dogecoin-"+dogeVersion+"-x86_64-linux-gnu.tar.gz",
 		"https://github.com/dogecoin/dogecoin/releases/download/v"+dogeVersion+"/", dogeSHA256,
 		"DOGE_VERSION="+dogeVersion, "DOGE_SHA256="+dogeSHA256)
+}
+
+func ensurePepecoinImage(t *testing.T) {
+	ensureReleaseImage(t, pepImage, "pepecoind", "pepecoin-"+pepVersion+"-x86_64-linux-gnu.tar.gz",
+		"https://github.com/pepecoinppc/pepecoin/releases/download/v"+pepVersion+"/", pepSHA256,
+		"PEP_VERSION="+pepVersion, "PEP_SHA256="+pepSHA256)
 }
 
 func ensureReleaseImage(t *testing.T, image, dockerDir, name, baseURL, sha string, buildArgs ...string) {
