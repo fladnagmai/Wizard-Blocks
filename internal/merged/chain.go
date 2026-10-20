@@ -1,6 +1,8 @@
-// Package merged connects aux chains to the engine for merged mining. Doge
-// is a Dogecoin node used through createauxblock/submitauxblock
-// (dogecoin src/rpc/mining.cpp, v1.14.9).
+// Package merged connects aux chains to the engine for merged mining. Each
+// Chain is one aux node used through createauxblock/submitauxblock
+// (dogecoin src/rpc/mining.cpp, v1.14.9; Pepecoin 1.1.0 is a Dogecoin 1.14.9
+// fork with the same calls and the same auxpow.cpp). A Set merges several
+// Chains into the one work.AuxSource the work manager takes.
 package merged
 
 import (
@@ -28,8 +30,26 @@ import (
 // DogeChainID is Dogecoin's AuxPoW chain ID (consensus.nAuxpowChainId).
 const DogeChainID = 0x62
 
-// DogeConfig configures the Dogecoin aux source.
-type DogeConfig struct {
+// PepChainID is Pepecoin's AuxPoW chain ID (pepecoin src/chainparams.cpp).
+const PepChainID = 0x3f
+
+// Spec describes one aux chain.
+type Spec struct {
+	Name       string // "doge": stats, files and API key
+	Ticker     string // "DOGE"
+	NodeName   string // "Dogecoin": in logs and messages
+	ChainID    uint32 // consensus.nAuxpowChainId
+	Subversion string // lower-case part of the node's user agent
+}
+
+// The aux chains the engine can merge-mine on a Litecoin parent.
+var (
+	DogeSpec = Spec{Name: "doge", Ticker: "DOGE", NodeName: "Dogecoin", ChainID: DogeChainID, Subversion: "shibetoshi"}
+	PepSpec  = Spec{Name: "pep", Ticker: "PEP", NodeName: "Pepecoin", ChainID: PepChainID, Subversion: "pepetoshi"}
+)
+
+// ChainConfig configures one aux chain source.
+type ChainConfig struct {
 	PayoutAddr  string
 	ZMQEndpoint string
 	Poll        time.Duration // tip check without ZMQ
@@ -37,16 +57,17 @@ type DogeConfig struct {
 	DataDir     string        // rejected proofs are saved here
 }
 
-// Doge is a work.AuxSource backed by a Dogecoin node.
-type Doge struct {
-	cfg DogeConfig
-	rpc *node.Client
-	zmq *node.ZMQSubscriber
-	st  *stats.Collector
-	log *slog.Logger
+// Chain is a work.AuxSource backed by one aux node.
+type Chain struct {
+	spec Spec
+	cfg  ChainConfig
+	rpc  *node.Client
+	zmq  *node.ZMQSubscriber
+	st   *stats.Collector
+	log  *slog.Logger
 
 	mu      sync.Mutex
-	addr    string // DOGE payout address ("" = merged mining off)
+	addr    string // payout address ("" = this chain is not merged)
 	poke    chan struct{}
 	cur     *work.AuxBlock
 	prev    string // previousblockhash of cur
@@ -55,9 +76,9 @@ type Doge struct {
 	wg      sync.WaitGroup
 }
 
-// NewDoge creates the Dogecoin aux source.
-func NewDoge(cfg DogeConfig, rpc *node.Client, st *stats.Collector, log *slog.Logger) *Doge {
-	d := &Doge{cfg: cfg, rpc: rpc, st: st, log: log.With("chain", "doge"), changed: make(chan struct{}, 1),
+// NewChain creates the aux source for spec.
+func NewChain(spec Spec, cfg ChainConfig, rpc *node.Client, st *stats.Collector, log *slog.Logger) *Chain {
+	d := &Chain{spec: spec, cfg: cfg, rpc: rpc, st: st, log: log.With("chain", spec.Name), changed: make(chan struct{}, 1),
 		addr: cfg.PayoutAddr, poke: make(chan struct{}, 1)}
 	if cfg.ZMQEndpoint != "" {
 		d.zmq = &node.ZMQSubscriber{Endpoint: cfg.ZMQEndpoint, Topics: []string{"hashblock"}, Log: d.log}
@@ -66,7 +87,7 @@ func NewDoge(cfg DogeConfig, rpc *node.Client, st *stats.Collector, log *slog.Lo
 }
 
 // Current implements work.AuxSource.
-func (d *Doge) Current() []work.AuxBlock {
+func (d *Chain) Current() []work.AuxBlock {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.cur == nil {
@@ -76,18 +97,21 @@ func (d *Doge) Current() []work.AuxBlock {
 }
 
 // Changed implements work.AuxSource.
-func (d *Doge) Changed() <-chan struct{} { return d.changed }
+func (d *Chain) Changed() <-chan struct{} { return d.changed }
 
-// PayoutAddress returns the DOGE payout address ("" when not set).
-func (d *Doge) PayoutAddress() string {
+// Spec returns the chain's description.
+func (d *Chain) Spec() Spec { return d.spec }
+
+// PayoutAddress returns the payout address ("" when not set).
+func (d *Chain) PayoutAddress() string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.addr
 }
 
-// SetPayoutAddress changes the DOGE payout address ("" turns merged mining
-// off). The caller has verified it. Work follows within moments.
-func (d *Doge) SetPayoutAddress(addr string) {
+// SetPayoutAddress changes the payout address ("" stops merging this
+// chain). The caller has verified it. Work follows within moments.
+func (d *Chain) SetPayoutAddress(addr string) {
 	d.mu.Lock()
 	d.addr = addr
 	d.mu.Unlock()
@@ -97,20 +121,20 @@ func (d *Doge) SetPayoutAddress(addr string) {
 	}
 }
 
-// RPC returns the Dogecoin node client.
-func (d *Doge) RPC() *node.Client { return d.rpc }
+// RPC returns the aux node client.
+func (d *Chain) RPC() *node.Client { return d.rpc }
 
 // ZMQConnected reports the ZMQ session state (false without ZMQ).
-func (d *Doge) ZMQConnected() bool { return d.zmq != nil && d.zmq.Connected() }
+func (d *Chain) ZMQConnected() bool { return d.zmq != nil && d.zmq.Connected() }
 
 // LastError is the last error talking to the node ("" when healthy).
-func (d *Doge) LastError() string {
+func (d *Chain) LastError() string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.lastErr
 }
 
-func (d *Doge) signal() {
+func (d *Chain) signal() {
 	select {
 	case d.changed <- struct{}{}:
 	default:
@@ -129,9 +153,9 @@ type auxBlockResult struct {
 }
 
 // parseAuxBlock checks createauxblock's answer and converts it.
-func parseAuxBlock(r *auxBlockResult, payout string) (*work.AuxBlock, error) {
-	if r.ChainID != DogeChainID {
-		return nil, fmt.Errorf("chain ID %d, want %d (not a Dogecoin node?)", r.ChainID, DogeChainID)
+func parseAuxBlock(spec Spec, r *auxBlockResult, payout string) (*work.AuxBlock, error) {
+	if r.ChainID != spec.ChainID {
+		return nil, fmt.Errorf("chain ID %d, want %d (not a %s node?)", r.ChainID, spec.ChainID, spec.NodeName)
 	}
 	h, err := bitcoin.HashFromDisplay(r.Hash)
 	if err != nil {
@@ -161,12 +185,12 @@ func parseAuxBlock(r *auxBlockResult, payout string) (*work.AuxBlock, error) {
 	if r.Height <= 0 || r.CoinbaseValue <= 0 {
 		return nil, fmt.Errorf("height %d / coinbasevalue %d invalid", r.Height, r.CoinbaseValue)
 	}
-	return &work.AuxBlock{Chain: "doge", ChainID: r.ChainID, Hash: h, Target: target,
+	return &work.AuxBlock{Chain: spec.Name, ChainID: r.ChainID, Hash: h, Target: target,
 		Height: r.Height, Reward: r.CoinbaseValue, PayoutAddr: payout}, nil
 }
 
 // fetch asks the node for the current aux block and publishes changes.
-func (d *Doge) fetch(ctx context.Context, why string) {
+func (d *Chain) fetch(ctx context.Context, why string) {
 	addr := d.PayoutAddress()
 	if addr == "" {
 		d.mu.Lock()
@@ -175,7 +199,7 @@ func (d *Doge) fetch(ctx context.Context, why string) {
 		d.mu.Unlock()
 		d.report(false, ReasonNoAddress, nil, d.nodeUp(ctx))
 		if lost {
-			d.log.Warn("no DOGE payout address: mining Litecoin only")
+			d.log.Warn("no " + d.spec.Ticker + " payout address: not merging " + d.spec.NodeName)
 			d.signal()
 		}
 		return
@@ -184,7 +208,7 @@ func (d *Doge) fetch(ctx context.Context, why string) {
 	err := d.rpc.Call(ctx, "createauxblock", []any{addr}, &r)
 	var b *work.AuxBlock
 	if err == nil {
-		b, err = parseAuxBlock(&r, addr)
+		b, err = parseAuxBlock(d.spec, &r, addr)
 	}
 	d.mu.Lock()
 	if err != nil {
@@ -198,10 +222,11 @@ func (d *Doge) fetch(ctx context.Context, why string) {
 		if errors.As(err, &rpcErr) {
 			up = true
 			reason = ReasonNodeError
-			// dogecoind's AuxMiningCheck (rpc/mining.cpp, v1.14.9): -10
-			// RPC_CLIENT_IN_INITIAL_DOWNLOAD "Dogecoin is downloading
-			// blocks...", -9 RPC_CLIENT_NOT_CONNECTED "Dogecoin is not
-			// connected!" (no peers: e.g. its sync paused from the node app).
+			// dogecoind's AuxMiningCheck (rpc/mining.cpp, v1.14.9; the same
+			// in pepecoind): -10 RPC_CLIENT_IN_INITIAL_DOWNLOAD "Dogecoin is
+			// downloading blocks...", -9 RPC_CLIENT_NOT_CONNECTED "Dogecoin
+			// is not connected!" (no peers: e.g. its sync paused from the
+			// node app).
 			switch rpcErr.Code {
 			case -10:
 				reason = ReasonNodeSyncing
@@ -211,7 +236,7 @@ func (d *Doge) fetch(ctx context.Context, why string) {
 		}
 		d.report(false, reason, nil, up)
 		if lost || first {
-			d.log.Warn("Dogecoin aux work unavailable: mining Litecoin alone until it is back", "err", msg, "trigger", why)
+			d.log.Warn(d.spec.NodeName+" aux work unavailable: merged mining continues without it until it is back", "err", msg, "trigger", why)
 		}
 		if lost {
 			d.signal()
@@ -227,9 +252,9 @@ func (d *Doge) fetch(ctx context.Context, why string) {
 		return
 	}
 	if back {
-		d.log.Info("Dogecoin aux work available", "height", b.Height, "hash", b.Hash.String(), "trigger", why)
+		d.log.Info(d.spec.NodeName+" aux work available", "height", b.Height, "hash", b.Hash.String(), "trigger", why)
 	} else {
-		d.log.Debug("Dogecoin aux block changed", "height", b.Height, "hash", b.Hash.String(), "trigger", why)
+		d.log.Debug(d.spec.NodeName+" aux block changed", "height", b.Height, "hash", b.Hash.String(), "trigger", why)
 	}
 	d.signal()
 }
@@ -244,16 +269,16 @@ const (
 )
 
 // nodeUp reports whether the node answers at all.
-func (d *Doge) nodeUp(ctx context.Context) bool {
+func (d *Chain) nodeUp(ctx context.Context) bool {
 	_, err := d.rpc.GetBestBlockHash(ctx)
 	return err == nil
 }
 
 // report publishes the chain's status to the stats.
-func (d *Doge) report(merged bool, reason string, b *work.AuxBlock, connected bool) {
+func (d *Chain) report(merged bool, reason string, b *work.AuxBlock, connected bool) {
 	addr := d.PayoutAddress()
 	zmq := d.ZMQConnected()
-	d.st.SetAux("doge", func(a *stats.AuxStatus) {
+	d.st.SetAux(d.spec.Name, func(a *stats.AuxStatus) {
 		a.Merged, a.Reason, a.Connected, a.ZMQ, a.Address = merged, reason, connected, zmq, addr
 		if b != nil {
 			a.Height = b.Height
@@ -262,9 +287,9 @@ func (d *Doge) report(merged bool, reason string, b *work.AuxBlock, connected bo
 	})
 }
 
-// Run keeps the aux block current until ctx ends: on each new Dogecoin
+// Run keeps the aux block current until ctx ends: on each new aux chain
 // block (ZMQ, or a poll of the tip) and periodically for new transactions.
-func (d *Doge) Run(ctx context.Context) {
+func (d *Chain) Run(ctx context.Context) {
 	zmqCh := make(chan node.ZMQMessage, 8)
 	if d.zmq != nil {
 		go d.zmq.Run(ctx, zmqCh)
@@ -298,8 +323,8 @@ func (d *Doge) Run(ctx context.Context) {
 }
 
 // Submit implements work.AuxSource: submitauxblock, then confirm the block
-// is on Dogecoin's active chain.
-func (d *Doge) Submit(b work.AuxBlock, ap *auxpow.AuxPow, worker string, shareDiff float64, parentHash bitcoin.Hash) {
+// is on the aux chain's active chain.
+func (d *Chain) Submit(b work.AuxBlock, ap *auxpow.AuxPow, worker string, shareDiff float64, parentHash bitcoin.Hash) {
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
@@ -307,14 +332,14 @@ func (d *Doge) Submit(b work.AuxBlock, ap *auxpow.AuxPow, worker string, shareDi
 	}()
 }
 
-func (d *Doge) submit(b work.AuxBlock, ap *auxpow.AuxPow, worker string, shareDiff float64, parentHash bitcoin.Hash) {
+func (d *Chain) submit(b work.AuxBlock, ap *auxpow.AuxPow, worker string, shareDiff float64, parentHash bitcoin.Hash) {
 	hash := b.Hash.String()
 	rec := stats.BlockRecord{
-		Chain: "doge", Height: b.Height, Hash: hash, Worker: worker, Address: b.PayoutAddr, Reward: b.Reward,
+		Chain: d.spec.Name, Height: b.Height, Hash: hash, Worker: worker, Address: b.PayoutAddr, Reward: b.Reward,
 		Time: time.Now(), Status: "pending", ShareDiff: shareDiff, NetworkDiff: pow.Scrypt.Difficulty(b.Target),
 		ParentHash: parentHash.String(),
 	}
-	d.log.Log(context.Background(), logging.LevelBlock, "*** DOGE BLOCK FOUND — submitting ***",
+	d.log.Log(context.Background(), logging.LevelBlock, "*** "+d.spec.Ticker+" BLOCK FOUND — submitting ***",
 		"height", b.Height, "hash", hash, "worker", worker, "payout", b.PayoutAddr, "reward_koinu", b.Reward, "parent", rec.ParentHash)
 	d.st.AuxBlockSubmitted(rec)
 
@@ -337,7 +362,7 @@ func (d *Doge) submit(b work.AuxBlock, ap *auxpow.AuxPow, worker string, shareDi
 	case err != nil:
 		status, rec.Reason = "rejected", err.Error()
 	case !ok:
-		status, rec.Reason = "rejected", "submitauxblock returned false (the reason is in the Dogecoin node's log)"
+		status, rec.Reason = "rejected", "submitauxblock returned false (the reason is in the "+d.spec.NodeName+" node's log)"
 	}
 	if status == "rejected" {
 		d.keepRejected(b, rec.Reason, auxHex)
@@ -356,27 +381,27 @@ func (d *Doge) submit(b work.AuxBlock, ap *auxpow.AuxPow, worker string, shareDi
 		time.Sleep(500 * time.Millisecond)
 	}
 	if status == "pending" {
-		status, rec.Reason = "rejected", "block unknown to the Dogecoin node after submit"
+		status, rec.Reason = "rejected", "block unknown to the "+d.spec.NodeName+" node after submit"
 	}
 	rec.Status = status
 	d.st.AuxBlockSubmitted(rec)
 	if status == "accepted" {
-		d.log.Log(context.Background(), logging.LevelBlock, "*** DOGE BLOCK ACCEPTED — on active chain ***",
+		d.log.Log(context.Background(), logging.LevelBlock, "*** "+d.spec.Ticker+" BLOCK ACCEPTED — on active chain ***",
 			"height", b.Height, "hash", hash, "worker", worker, "payout", b.PayoutAddr, "reward_koinu", b.Reward)
 	} else {
-		d.log.Error("DOGE block not on active chain", "height", b.Height, "hash", hash, "status", status, "reason", rec.Reason)
+		d.log.Error(d.spec.Ticker+" block not on active chain", "height", b.Height, "hash", hash, "status", status, "reason", rec.Reason)
 	}
 }
 
 // keepRejected logs the full AuxPoW of a refused aux block and saves it.
-func (d *Doge) keepRejected(b work.AuxBlock, reason, auxHex string) {
+func (d *Chain) keepRejected(b work.AuxBlock, reason, auxHex string) {
 	path := ""
 	if d.cfg.DataDir != "" {
 		dir := filepath.Join(d.cfg.DataDir, "rejected-blocks")
-		p := filepath.Join(dir, fmt.Sprintf("doge-%d-%s.auxpow.hex", b.Height, b.Hash.String()))
+		p := filepath.Join(dir, fmt.Sprintf("%s-%d-%s.auxpow.hex", d.spec.Name, b.Height, b.Hash.String()))
 		if os.MkdirAll(dir, 0o700) == nil && os.WriteFile(p, []byte(auxHex+"\n"), 0o600) == nil {
 			path = p
 		}
 	}
-	d.log.Error("rejected DOGE auxpow hex", "height", b.Height, "hash", b.Hash.String(), "reason", reason, "saved", path, "hex", auxHex)
+	d.log.Error("rejected "+d.spec.Ticker+" auxpow hex", "height", b.Height, "hash", b.Hash.String(), "reason", reason, "saved", path, "hex", auxHex)
 }

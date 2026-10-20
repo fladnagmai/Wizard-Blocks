@@ -111,3 +111,45 @@ func mustSeg(t *testing.T, hrp string, prog []byte) string {
 	}
 	return s
 }
+
+// Pepecoin addresses (Base58Check; pepecoin src/chainparams.cpp v1.1.0):
+// mainnet P2PKH 56 ("P…") and P2SH 22, testnet 113 / 196, regtest 111 / 196.
+// The regtest node cross-checks real addresses in the integration tests.
+func TestPEPAddresses(t *testing.T) {
+	h := bytes.Repeat([]byte{0x5e}, 20)
+	for _, c := range []struct {
+		chain    string
+		ver      byte
+		typ      string
+		script   string
+		firstChr string
+	}{
+		{"main", 56, "p2pkh", "76a914" + strings.Repeat("5e", 20) + "88ac", "P"},
+		{"main", 22, "p2sh", "a914" + strings.Repeat("5e", 20) + "87", ""},
+		{"test", 113, "p2pkh", "76a914" + strings.Repeat("5e", 20) + "88ac", "n"},
+		{"test", 196, "p2sh", "a914" + strings.Repeat("5e", 20) + "87", "2"},
+		{"regtest", 111, "p2pkh", "76a914" + strings.Repeat("5e", 20) + "88ac", ""},
+	} {
+		n, err := NetworkFor(PEP, c.chain)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := Base58CheckEncode(append([]byte{c.ver}, h...))
+		if c.firstChr != "" && !strings.HasPrefix(s, c.firstChr) {
+			t.Fatalf("%s v%d encodes as %s, want %s…", c.chain, c.ver, s, c.firstChr)
+		}
+		a, err := Decode(n, s)
+		if err != nil || a.Type != c.typ || hex.EncodeToString(a.Script) != c.script {
+			t.Fatalf("%s %s: %v %+v", c.chain, s, err, a)
+		}
+	}
+	// A DOGE mainnet address is not a PEP address, and the other way round.
+	pep, _ := NetworkFor(PEP, "main")
+	if _, err := Decode(pep, "DH5yaieqoZN36fDVciNyRueRGvGLR3mr7L"); err == nil {
+		t.Fatal("DOGE address accepted as PEP")
+	}
+	doge, _ := NetworkFor(DOGE, "main")
+	if _, err := Decode(doge, Base58CheckEncode(append([]byte{56}, h...))); err == nil {
+		t.Fatal("PEP address accepted as DOGE")
+	}
+}

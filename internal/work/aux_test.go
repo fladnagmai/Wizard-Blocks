@@ -19,6 +19,7 @@ type fakeAux struct {
 	mu     sync.Mutex
 	blocks []AuxBlock
 	got    []*auxpow.AuxPow
+	chains []string
 	ch     chan struct{}
 }
 
@@ -27,6 +28,7 @@ func (f *fakeAux) Changed() <-chan struct{} { return f.ch }
 func (f *fakeAux) Submit(b AuxBlock, ap *auxpow.AuxPow, _ string, _ float64, _ bitcoin.Hash) {
 	f.mu.Lock()
 	f.got = append(f.got, ap)
+	f.chains = append(f.chains, b.Chain)
 	f.mu.Unlock()
 }
 
@@ -159,5 +161,88 @@ func TestAuxWithdrawnDropsTag(t *testing.T) {
 	m.updateAux(nil)
 	if len(got) != 2 || got[1].Aux == nil || !hasTag(got[1]) {
 		t.Fatal("tag not back when the aux work returned")
+	}
+}
+
+// Two aux chains on one share (DOGE chain ID 0x62, PEP 0x3f): the chain
+// merkle tree has two slots (size 2, nonce 0: DOGE slot 0, PEP slot 1), one
+// coinbase tag commits to both, and a share meeting both targets gives two
+// AuxPoWs that each pass that chain's own check. A share meeting only the
+// easier target solves only that chain.
+func TestMergedMiningTwoChains(t *testing.T) {
+	p, _ := ParamsFor(address.LTC)
+	_, b := loadLTCBlock(t, "testnet4Block2319633.dat")
+	height, _ := bitcoin.DecodeBIP34Height(b.Txs[0].Inputs[0].Script)
+	gbt := templateFromBlock(t, b, height, true)
+	gbt.MWEB = hex.EncodeToString(b.MWEB)
+	tmpl, err := NewTemplate(gbt, p, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	easy := new(big.Int).Lsh(big.NewInt(1), 255)
+	harder := new(big.Int).Lsh(big.NewInt(1), 240)
+	doge := AuxBlock{Chain: "doge", ChainID: 0x62, Hash: bitcoin.Hash{0xd0, 0x6e}, Target: easy, Height: 5}
+	pep := AuxBlock{Chain: "pep", ChainID: 0x3f, Hash: bitcoin.Hash{0x9e, 0x9e}, Target: easy, Height: 9}
+	aux := &fakeAux{blocks: []AuxBlock{doge, pep}, ch: make(chan struct{})}
+	m := NewManager(Config{Params: p, Chain: "test", Tag: []byte("/t/"), Extranonce2Size: 8, Aux: aux}, nil,
+		stats.New("ltc", "t", ""), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	aw, err := newAuxWork(aux.Current(), m.PoW())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if aw.Commitment.Size != 2 || aw.Commitment.Nonce != 0 {
+		t.Fatalf("tree size %d nonce %d, want 2 / 0", aw.Commitment.Size, aw.Commitment.Nonce)
+	}
+	for _, c := range []struct {
+		id   uint32
+		slot int32
+	}{{0x62, 0}, {0x3f, 1}} {
+		if _, idx, ok := aw.Commitment.Branch(c.id); !ok || idx != c.slot || uint32(idx) != auxpow.ExpectedIndex(0, c.id, 1) {
+			t.Fatalf("chain %#x in slot %d, want %d", c.id, idx, c.slot)
+		}
+	}
+	w := &Work{Tmpl: tmpl, Gen: 1, Aux: aw, m: m, byScript: map[string]*Job{}}
+	job, err := w.Job([]byte{0x00, 0x14, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}, "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	en1, en2 := []byte{1, 2, 3, 4}, []byte{5, 6, 7, 8, 9, 10, 11, 12}
+	hdr := job.Header(en1, en2, tmpl.CurTime, 7, tmpl.Version)
+	c := Candidate{Job: job, Header: hdr, En1: en1, En2: en2, Worker: "w"}
+	m.SubmitAux(c, bitcoin.Hash{}) // meets both targets
+	if len(aux.got) != 2 {
+		t.Fatalf("%d aux submissions, want 2 (%v)", len(aux.got), aux.chains)
+	}
+	for i, ch := range aux.chains {
+		blk := map[string]AuxBlock{"doge": doge, "pep": pep}[ch]
+		if err := aux.got[i].Check(blk.Hash, blk.ChainID, true); err != nil {
+			t.Fatalf("%s AuxPoW fails its check: %v", ch, err)
+		}
+		// The proof for one chain is no proof for the other.
+		other := map[string]AuxBlock{"doge": pep, "pep": doge}[ch]
+		if aux.got[i].Check(other.Hash, other.ChainID, true) == nil {
+			t.Fatalf("%s proof also passes as the other chain", ch)
+		}
+	}
+	// New aux blocks; PEP now harder: a share between the targets solves DOGE only.
+	doge.Hash, pep.Hash, pep.Target = bitcoin.Hash{0xd0, 0x70}, bitcoin.Hash{0x9e, 0xa0}, harder
+	aux.mu.Lock()
+	aux.blocks, aux.got, aux.chains = []AuxBlock{doge, pep}, nil, nil
+	aux.mu.Unlock()
+	aw2, _ := newAuxWork(aux.Current(), m.PoW())
+	w2 := &Work{Tmpl: tmpl, Gen: 1, Aux: aw2, m: m, byScript: map[string]*Job{}}
+	job2, err := w2.Job([]byte{0x00, 0x14, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}, "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c = Candidate{Job: job2, Header: job2.Header(en1, en2, tmpl.CurTime, 7, tmpl.Version), En1: en1, En2: en2, Worker: "w"}
+	mid := bitcoin.Hash{}
+	mid[31] = 0x01 // internal byte order: about 2^248, above PEP's 2^240, below DOGE's 2^255
+	m.SubmitAux(c, mid)
+	if len(aux.chains) != 1 || aux.chains[0] != "doge" {
+		t.Fatalf("submitted %v, want doge only", aux.chains)
+	}
+	if aw2.MinDiff != m.PoW().Difficulty(easy) {
+		t.Fatalf("share difficulty cap %v, want the easier chain's", aw2.MinDiff)
 	}
 }

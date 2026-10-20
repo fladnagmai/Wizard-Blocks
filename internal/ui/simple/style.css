@@ -51,7 +51,7 @@ td { border-bottom: 1px solid var(--line); }
 a { color: var(--g); }
 #s-msg { min-height: 1.5em; margin: 8px 0 0; }
 .banner { border: 1px solid var(--amber, #ffb000); color: var(--amber, #ffb000); background: rgba(255, 176, 0, 0.08); padding: 10px 14px; margin: 14px 0 0; }
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 14px; }
 .dgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 12px; }
 .dgrid label input, .dgrid label select { width: 100%; box-sizing: border-box; margin-top: 4px; }
 select, textarea { background: #000; color: var(--g); border: 1px solid var(--dim); font: inherit; padding: 6px 8px; }
@@ -63,4 +63,6 @@ code { color: var(--g); }
 #d-msg { min-height: 1.5em; margin: 8px 0 0; }
 @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } .dgrid { grid-template-columns: 1fr 1fr; } }
 
-#ca-title { color: var(--aux); }
+/* Aux chain titles in the chain's own colour. */
+.aux h2 { color: var(--aux); }
+#ca-pep h2 { color: #5fd35f; }

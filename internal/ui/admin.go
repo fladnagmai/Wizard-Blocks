@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -46,14 +47,15 @@ type LimitsBackend interface {
 	ResetConnLimits() error
 }
 
-// DogeBackend is implemented by an engine that can merge-mine Dogecoin.
-type DogeBackend interface {
-	// DogePayout returns the DOGE payout address ("" if none) and whether
-	// merged mining is available (a Dogecoin node is configured).
-	DogePayout() (addr string, available bool)
-	// SetDogePayout verifies a new address with the Dogecoin node ("" turns
-	// merged mining off), saves and applies it, and returns it.
-	SetDogePayout(ctx context.Context, addr string) (string, error)
+// AuxBackend is implemented by an engine that can merge-mine aux chains
+// (chain "doge", "pep").
+type AuxBackend interface {
+	// AuxPayout returns the chain's payout address ("" if none) and whether
+	// it can be merged at all (its node is configured).
+	AuxPayout(chain string) (addr string, available bool)
+	// SetAuxPayout verifies a new address with the chain's node ("" stops
+	// merging it), saves and applies it, and returns it.
+	SetAuxPayout(ctx context.Context, chain, addr string) (string, error)
 }
 
 const (
@@ -460,7 +462,9 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 			jsonErr(w, http.StatusMethodNotAllowed, "method not allowed")
 		}
 	})
-	mux.HandleFunc("/api/admin/doge-payout", func(w http.ResponseWriter, r *http.Request) {
+	// Aux chain payout addresses: PUT {"chain":"pep","address":"P…"} on
+	// aux-payout; doge-payout is the DOGE-only form the older page used.
+	auxPayout := func(w http.ResponseWriter, r *http.Request, chain string) {
 		if !a.authed(r) {
 			jsonErr(w, http.StatusUnauthorized, "login required")
 			return
@@ -469,28 +473,42 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 			jsonErr(w, http.StatusForbidden, "forbidden")
 			return
 		}
-		db, ok := a.backend.(DogeBackend)
-		if !ok {
-			jsonErr(w, http.StatusNotFound, "Dogecoin merged mining is not available")
-			return
-		}
+		ab, ok := a.backend.(AuxBackend)
 		var body struct {
+			Chain   string `json:"chain"`
 			Address string `json:"address"`
 		}
 		if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&body); err != nil {
 			jsonErr(w, http.StatusBadRequest, "bad request")
 			return
 		}
+		if chain == "" {
+			chain = body.Chain
+		}
+		if !ok {
+			jsonErr(w, http.StatusNotFound, "merged mining is not available")
+			return
+		}
+		if _, avail := ab.AuxPayout(chain); !avail {
+			jsonErr(w, http.StatusNotFound, fmt.Sprintf("merged mining of %q is not available", chain))
+			return
+		}
 		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-		addr, err := db.SetDogePayout(ctx, body.Address)
+		addr, err := ab.SetAuxPayout(ctx, chain, body.Address)
 		cancel()
 		if err != nil {
 			jsonErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		s.log.Info("DOGE payout address changed from the UI", "ip", clientIP(r), "address", addr)
-		writeJSON(w, map[string]any{"doge_payout_address": addr})
-	})
+		s.log.Info("aux payout address changed from the UI", "chain", chain, "ip", clientIP(r), "address", addr)
+		if r.URL.Path == "/api/admin/doge-payout" {
+			writeJSON(w, map[string]any{"doge_payout_address": addr})
+			return
+		}
+		writeJSON(w, map[string]any{"chain": chain, "address": addr})
+	}
+	mux.HandleFunc("/api/admin/doge-payout", func(w http.ResponseWriter, r *http.Request) { auxPayout(w, r, "doge") })
+	mux.HandleFunc("/api/admin/aux-payout", func(w http.ResponseWriter, r *http.Request) { auxPayout(w, r, "") })
 	mux.HandleFunc("/api/admin/settings/reset", func(w http.ResponseWriter, r *http.Request) {
 		if !a.authed(r) {
 			jsonErr(w, http.StatusUnauthorized, "login required")

@@ -2,7 +2,7 @@
 // (Base58Check P2PKH/P2SH, BIP173 bech32 segwit v0, BIP350 bech32m taproot),
 // BCH (CashAddr incl. P2SH32 and token-aware types, legacy Base58Check),
 // LTC (Base58Check with both P2SH versions, bech32/bech32m; MWEB addresses
-// are refused: a coinbase cannot pay them) and DOGE (Base58Check only).
+// are refused: a coinbase cannot pay them), DOGE and PEP (Base58Check only).
 //
 // The engine never trusts this decoding alone: at startup and on every
 // authorize it is cross-checked against the node's validateaddress
@@ -24,6 +24,7 @@ const (
 	BCH  Coin = "bch"
 	LTC  Coin = "ltc"
 	DOGE Coin = "doge"
+	PEP  Coin = "pep" // Pepecoin (pepecoinppc/pepecoin, a Dogecoin 1.14 fork)
 )
 
 // Network holds address encoding parameters for one coin + chain.
@@ -89,6 +90,19 @@ func NetworkFor(coin Coin, chain string) (*Network, error) {
 		default:
 			return nil, fmt.Errorf("unknown DOGE chain %q", chain)
 		}
+	case PEP:
+		// pepecoin src/chainparams.cpp (v1.1.0): mainnet P… (56) / 22,
+		// testnet 113 / 196, regtest 111 / 196.
+		switch chain {
+		case "main":
+			n.PubKeyHash, n.ScriptHash = 56, 22
+		case "test":
+			n.PubKeyHash, n.ScriptHash = 113, 196
+		case "regtest":
+			n.PubKeyHash, n.ScriptHash = 111, 196
+		default:
+			return nil, fmt.Errorf("unknown PEP chain %q", chain)
+		}
 	default:
 		return nil, fmt.Errorf("unknown coin %q", coin)
 	}
@@ -134,7 +148,7 @@ func Decode(n *Network, s string) (*Address, error) {
 			}
 		}
 		return decodeBase58(n, s)
-	case DOGE:
+	case DOGE, PEP:
 		return decodeBase58(n, s)
 	case BCH:
 		if a, err := decodeCashAddr(n, s); err == nil {

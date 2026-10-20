@@ -45,7 +45,7 @@ type Engine struct {
 	cacheMu sync.Mutex
 	cache   map[string]*stratum.Payout
 
-	doge *merged.Doge // Dogecoin merged mining (nil: off)
+	aux *merged.Set // merged-mined aux chains: Dogecoin, Pepecoin (nil: none)
 }
 
 // New creates an engine. It performs no I/O.
@@ -211,13 +211,11 @@ func (e *Engine) Start(ctx context.Context) error {
 		return err
 	}
 	var aux work.AuxSource
-	if e.cfg.Doge.Enabled() {
-		if e.doge, err = e.initDoge(ctx); err != nil {
-			return err
-		}
-		if e.doge != nil {
-			aux = e.doge
-		}
+	if e.aux, err = e.initAuxSet(ctx); err != nil {
+		return err
+	}
+	if e.aux != nil {
+		aux = e.aux
 	}
 	e.mgr = work.NewManager(work.Config{
 		Params: params, Chain: ci.Chain, Tag: []byte(e.cfg.Payout.CoinbaseTag),
@@ -296,8 +294,8 @@ func (e *Engine) Run(ctx context.Context) error {
 	go func() { errc <- e.srv.Serve(ctx) }()
 	go func() { errc <- e.api.Serve() }()
 	go func() { errc <- e.mgr.Run(ctx) }()
-	if e.doge != nil {
-		go e.doge.Run(ctx)
+	if e.aux != nil {
+		go e.aux.Run(ctx)
 	}
 
 	saveTick := time.NewTicker(time.Minute)

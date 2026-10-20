@@ -33,18 +33,7 @@
         <dt>Blocks found</dt><dd id="cp-blocks">—</dd>
       </dl>
     </section>
-    <section class="panel" id="chain-aux">
-      <h2 id="ca-title">DOGE (MERGED)</h2>
-      <dl>
-        <dt>Status</dt><dd id="ca-status">—</dd>
-        <dt>Height</dt><dd id="ca-height">—</dd>
-        <dt>Network diff</dt><dd id="ca-diff">—</dd>
-        <dt>Effort</dt><dd id="ca-effort">—</dd>
-        <dt>Expected block</dt><dd id="ca-exp">—</dd>
-        <dt>Odds (day / week)</dt><dd id="ca-odds">—</dd>
-        <dt>Blocks found</dt><dd id="ca-blocks">—</dd>
-      </dl>
-    </section>
+    <!-- one panel per merged aux chain (DOGE, PEP), built by app.js -->
   </div>
 
   <div class="grid">
@@ -88,11 +77,8 @@
         <label for="s-addr" id="s-addr-label">Payout address</label>
         <div class="row"><input id="s-addr" spellcheck="false" autocomplete="off" placeholder=""><button id="s-save">Save</button></div>
         <p class="dim small">100% of every block reward goes here. Checked by your node; miners get no work until it is set.</p>
-        <div id="s-doge-wrap" hidden>
-          <label for="s-doge">DOGE payout address (optional)</label>
-          <div class="row"><input id="s-doge" spellcheck="false" autocomplete="off" placeholder="D…"><button id="s-doge-save">Save</button></div>
-          <p class="dim small">Set it to also mine Dogecoin with the same hashrate. Checked by your Dogecoin node. Leave empty for Litecoin only.</p>
-        </div>
+        <!-- one optional payout address per merged aux chain, built by app.js -->
+        <div id="s-aux"></div>
         <div id="s-lim-wrap" hidden>
           <label for="s-maxconn">Connection limits: total / per IP (new connections only)</label>
           <div class="row"><input id="s-maxconn" type="number" min="1" inputmode="numeric"><input id="s-maxip" type="number" min="1" inputmode="numeric"><button id="s-lim-save">Save</button><button id="s-lim-reset">Defaults</button></div>
