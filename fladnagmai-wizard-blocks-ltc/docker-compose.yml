@@ -11,7 +11,7 @@ services:
   engine:
     # Wizard-Blocks engine with Litecoin + Dogecoin + Pepecoin merged mining
     # (.github/workflows/image.yml; the digest is added at the approved build).
-    image: ghcr.io/fladnagmai/wizard-blocks:1.0.0-beta
+    image: ghcr.io/fladnagmai/wizard-blocks:1.0.0-beta@sha256:41707df1cead71a9f9e530cb06f3312e317667e4251948fbaa2937a3de378ee5
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 90s          # lets an in-flight block submission finish
