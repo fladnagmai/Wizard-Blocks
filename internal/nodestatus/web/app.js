@@ -37,7 +37,9 @@ function state(n) {
 function base(n) {
   switch (n.state) {
     case 'synced': return 'synced';
-    case 'syncing': return n.headers > 0 ? `syncing ${(n.progress * 100).toFixed(2)}%` : 'syncing (finding peers)';
+    // The node's own estimate (verificationprogress) can read ~100% early in
+    // a sync when its chain data is old (Pepecoin), so blocks / headers caps it.
+    case 'syncing': return n.headers > 0 ? `syncing ${(Math.min(n.progress, n.blocks / n.headers) * 100).toFixed(2)}%` : 'syncing (finding peers)';
     case 'starting': return `starting: ${n.error || ''}`.trim();
     default: return `down: ${n.error || 'not reachable'}`;
   }

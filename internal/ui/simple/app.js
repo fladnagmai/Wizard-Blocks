@@ -73,11 +73,17 @@ function bannerText(name, ticker, reason) {
   }
 }
 
+// Network difficulty as the nodes and explorers show it. The engine keeps
+// Scrypt difficulty in share units (65536 x node units, the unit miners'
+// share difficulty is in), so LTC/DOGE/PEP figures are divided back.
+let diffScale = 1;
+const netDiff = (d) => fmtDiff(d / diffScale);
+
 function renderChain(prefix, title, v, isAux) {
   set(prefix + '-status', isAux ? (v.merged ? 'merged' : 'not merged: ' + (v.reason || '—')) : (!v.connected ? 'no node connection' : v.synced ? 'synced' : 'syncing'), isAux ? !v.merged : !v.connected || !v.synced);
   $(prefix + '-title').textContent = title;
   set(prefix + '-height', v.height ? fmtInt(v.height) : '—');
-  set(prefix + '-diff', fmtDiff(v.network_difficulty));
+  set(prefix + '-diff', netDiff(v.network_difficulty));
   set(prefix + '-effort', v.effort_pct == null ? '—' : v.effort_pct.toFixed(4) + ' %');
   set(prefix + '-exp', fmtSecs(v.expected_block_s));
   set(prefix + '-odds', `${odds(v.odds_day)} / ${odds(v.odds_week)}`);
@@ -121,6 +127,7 @@ function render(st) {
   lastState = st;
   const n = st.node || {}, p = st.pool || {}, t = st.template || {}, d = st.derived || {};
   const coin = st.coin || {}, ticker = coin.ticker || '';
+  diffScale = coin.coin === 'ltc' ? 65536 : 1;
   $('title').textContent = 'WIZARD-BLOCKS' + (ticker ? '-' + ticker : '');
   document.title = 'Wizard-Blocks' + (ticker ? '-' + ticker : '');
   document.documentElement.dataset.coin = coin.coin || '';
@@ -166,7 +173,7 @@ function render(st) {
   set('p-rej', fmtInt(p.shares_rejected) + (rej ? ` (${rej})` : '') + (p.shares_stale ? ` · ${fmtInt(p.shares_stale)} stale` : ''), p.shares_rejected > 0);
   set('p-bad', fmtInt(p.bad_messages));
   set('p-best', p.best_share_difficulty ? `${fmtDiff(p.best_share_difficulty)}${p.best_share_worker ? ' · ' + p.best_share_worker : ''}` : '—');
-  set('p-netdiff', fmtDiff(t.network_difficulty));
+  set('p-netdiff', netDiff(t.network_difficulty));
   set('p-effort', d.luck_since_last_block_pct == null ? '—' : d.luck_since_last_block_pct.toFixed(4) + ' %');
   set('p-odds', `${odds(d.odds_day)} / ${odds(d.odds_week)}`);
   set('p-blocks', `${fmtInt(p.blocks_found)}${p.blocks_pending ? ` (+${p.blocks_pending} pending)` : ''}`);

@@ -38,6 +38,11 @@ const cfg = JSON.parse(process.argv[2]);
       const sfile = `${cfg.out}/${name}-settings-${vname}.png`;
       await page.locator('#settings').screenshot({ path: sfile });
       await page.locator('#diff').screenshot({ path: `${cfg.out}/${name}-difficulty-${vname}.png` });
+      // Network difficulty in node units, as the nodes show it (the test
+      // template is LTC 52M, DOGE 21M, PEP 3M node units; BTC/BCH 126T).
+      const nd = await page.evaluate(() => ['p-netdiff', 'cp-diff', 'ca-doge-diff', 'ca-pep-diff'].map((id) => (document.getElementById(id) || {}).textContent || ''));
+      const wantNd = name.startsWith('ltc') ? ['52.00M', '52.00M', '21.00M', name.includes('pep') ? '3.00M' : ''] : ['126.0T', '', '', ''];
+      if (JSON.stringify(nd.map((x, i) => (wantNd[i] ? x : ''))) !== JSON.stringify(wantNd)) errors.push('network difficulty ' + JSON.stringify(nd));
       const wantAux = name.startsWith('ltc'), wantPep = name.includes('pep');
       const wantBanner = name.startsWith('ltc') && name !== 'ltc-doge-merged' && name !== 'ltc-doge-pep-merged';
       if (shown.chains !== wantAux || shown['s-aux-doge'] !== wantAux || shown['s-aux-pep'] !== wantPep || shown.banner !== wantBanner || !shown.diff) {
