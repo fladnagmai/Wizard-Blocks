@@ -86,7 +86,8 @@ function renderChain(prefix, title, v, isAux) {
   set(prefix + '-diff', netDiff(v.network_difficulty));
   set(prefix + '-effort', v.effort_pct == null ? '—' : v.effort_pct.toFixed(4) + ' %');
   set(prefix + '-exp', fmtSecs(v.expected_block_s));
-  set(prefix + '-odds', `${odds(v.odds_day)} / ${odds(v.odds_week)}`);
+  set(prefix + '-odds-day', odds(v.odds_day));
+  set(prefix + '-odds-week', odds(v.odds_week));
   set(prefix + '-blocks', `${fmtInt(v.blocks_found)}${v.blocks_pending ? ` (+${v.blocks_pending} pending)` : ''}`);
 }
 
@@ -102,7 +103,7 @@ function auxNames(chains, parent) {
 function ensureAux(name, c) {
   if ($('ca-' + name)) return;
   const dl = [['status', 'Status'], ['height', 'Height'], ['diff', 'Network diff'], ['effort', 'Effort'], ['exp', 'Expected block'],
-    ['odds', 'Odds (day / week)'], ['blocks', 'Blocks found']].map(([k, l]) => `<dt>${l}</dt><dd id="ca-${name}-${k}">—</dd>`).join('');
+    ['odds-day', 'Block chance / day'], ['odds-week', 'Block chance / week'], ['blocks', 'Blocks found']].map(([k, l]) => `<dt>${l}</dt><dd id="ca-${name}-${k}">—</dd>`).join('');
   $('chains').insertAdjacentHTML('beforeend', `<section class="panel aux" id="ca-${name}"><h2 id="ca-${name}-title"></h2><dl>${dl}</dl></section>`);
   const hint = esc(c.hint || '');
   $('s-aux').insertAdjacentHTML('beforeend', `<div class="aux-pay" id="s-aux-${name}">
@@ -175,7 +176,8 @@ function render(st) {
   set('p-best', p.best_share_difficulty ? `${fmtDiff(p.best_share_difficulty)}${p.best_share_worker ? ' · ' + p.best_share_worker : ''}` : '—');
   set('p-netdiff', netDiff(t.network_difficulty));
   set('p-effort', d.luck_since_last_block_pct == null ? '—' : d.luck_since_last_block_pct.toFixed(4) + ' %');
-  set('p-odds', `${odds(d.odds_day)} / ${odds(d.odds_week)}`);
+  set('p-odds-day', odds(d.odds_day));
+  set('p-odds-week', odds(d.odds_week));
   set('p-blocks', `${fmtInt(p.blocks_found)}${p.blocks_pending ? ` (+${p.blocks_pending} pending)` : ''}`);
 
   const sx = st.stratum || {};

@@ -196,7 +196,7 @@ func TestHandler(t *testing.T) {
 	if pr.Header.Get("Cache-Control") != "no-store" || pr.Header.Get("ETag") != "" {
 		t.Fatalf("page caching: %v", pr.Header)
 	}
-	if !strings.Contains(page, `<pre id="out">`) || strings.Contains(page, "<style") || strings.Contains(page, "<script>") {
+	if !strings.Contains(page, `<main id="nodes">`) || strings.Contains(page, "<style") || strings.Contains(page, "<script>") {
 		t.Fatalf("page: %s", page)
 	}
 	_, js := get("/app.js")

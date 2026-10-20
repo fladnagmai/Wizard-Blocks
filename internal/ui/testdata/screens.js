@@ -20,8 +20,9 @@ const cfg = JSON.parse(process.argv[2]);
       await page.screenshot({ path: file, fullPage: true });
       const banner = await page.evaluate(() => { const b = document.getElementById('banner'); return b.offsetParent === null ? '' : b.textContent; });
       const shown = await page.evaluate(() => Object.fromEntries(['chains', 'banner', 's-aux-doge', 's-aux-pep', 'diff'].map((id) => [id, !!document.getElementById(id) && document.getElementById(id).offsetParent !== null])));
-      const oddsTxt = await page.evaluate(() => ['p-odds', 'cp-odds', 'ca-doge-odds', 'ca-pep-odds'].map((id) => (document.getElementById(id) || {}).textContent || '').join(' '));
-      if (/%/.test(oddsTxt) || !/^(—|1:[\d,.E]+)( \/ (—|1:[\d,.E]+))*\s*/.test(oddsTxt.trim())) errors.push('block odds not shown as 1:N: ' + oddsTxt);
+      const oddsTxt = await page.evaluate(() => ['p', 'cp', 'ca-doge', 'ca-pep'].flatMap((p) => [p + '-odds-day', p + '-odds-week']).map((id) => document.getElementById(id)).filter(Boolean).map((e) => e.textContent));
+      // One value per row (per day, per week), each 1:N or — before there is a hashrate.
+      if (oddsTxt.length < 4 || oddsTxt.some((x) => !/^(—|1:[\d,.E]+)$/.test(x))) errors.push('block chance not 1:N per day and per week: ' + JSON.stringify(oddsTxt));
       // Per-coin accent, TEST note only for the test build, every settings control present.
       const color = await page.evaluate(() => getComputedStyle(document.body).color);
       const wantColor = { btc: 'rgb(247, 147, 26)', bch: 'rgb(10, 193, 142)', ltc: 'rgb(143, 180, 255)' }[name.split('-')[0]];
