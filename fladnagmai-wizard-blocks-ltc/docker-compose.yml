@@ -9,9 +9,9 @@ services:
       APP_PORT: 8420
 
   engine:
-    # Wizard-Blocks engine test build with Litecoin + Dogecoin merged mining
-    # (.github/workflows/image.yml run on the phase4-fix branch).
-    image: ghcr.io/fladnagmai/wizard-blocks:0.2.0-test2@sha256:b98732cb35c48f567955a509c28d3b71b16af095b9467354f46abeba50ccf1f6
+    # Wizard-Blocks engine test build with Litecoin + Dogecoin + Pepecoin merged mining
+    # (.github/workflows/image.yml; the digest is added at the approved build).
+    image: ghcr.io/fladnagmai/wizard-blocks:0.2.0-test3
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 90s          # lets an in-flight block submission finish
@@ -27,6 +27,12 @@ services:
       WB_DOGE_RPC_USER: ${APP_DOGECOIN_RPC_USER}
       WB_DOGE_RPC_PASSWORD: ${APP_DOGECOIN_RPC_PASS}
       WB_DOGE_ZMQ_HASHBLOCK: tcp://${APP_DOGECOIN_NODE_IP}:${APP_DOGECOIN_ZMQ_HASHBLOCK_PORT}
+      # Pepecoin: merged mining once a PEP payout address is set in the web
+      # UI (empty, so off, while the node app has no Pepecoin node yet).
+      WB_PEP_RPC_URL: ${APP_PEPECOIN_RPC_URL:-}
+      WB_PEP_RPC_USER: ${APP_PEPECOIN_RPC_USER:-}
+      WB_PEP_RPC_PASSWORD: ${APP_PEPECOIN_RPC_PASS:-}
+      WB_PEP_ZMQ_HASHBLOCK: ${APP_PEPECOIN_ZMQ_HASHBLOCK_URL:-}
       WB_ENV_FILE: /data/override.env
       # Payout addresses: set in the web UI on first run (checked by the nodes).
       WB_PAYOUT_MODE: fixed

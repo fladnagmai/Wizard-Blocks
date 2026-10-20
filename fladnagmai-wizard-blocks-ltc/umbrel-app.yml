@@ -2,24 +2,24 @@ manifestVersion: 1
 id: fladnagmai-wizard-blocks-ltc
 category: crypto
 name: Wizard-Blocks² (test)
-version: "0.2.0-test2"
-tagline: Solo-mine Litecoin and merge-mine Dogecoin on your own nodes (test build)
+version: "0.2.0-test3"
+tagline: Solo-mine Litecoin and merge-mine Dogecoin and Pepecoin on your own nodes (test build)
 icon: https://raw.githubusercontent.com/fladnagmai/Wizard-Blocks/main/fladnagmai-wizard-blocks-ltc/icon.svg
 description: >-
   TEST BUILD. Wizard-Blocks-LTC is a self-hosted solo-mining Stratum V1
-  server for Litecoin with Dogecoin merged mining: every share is checked
-  against both chains, so one Scrypt miner mines LTC and DOGE at once. It
-  talks to your Litecoin + Dogecoin Node app over RPC and ZMQ, and
-  100% of every block reward goes to your own payout addresses.
+  server for Litecoin with Dogecoin and Pepecoin merged mining: every share
+  is checked against every chain, so one Scrypt miner mines LTC, DOGE and
+  PEP at once. It talks to your Litecoin + Dogecoin Node app over RPC and
+  ZMQ, and 100% of every block reward goes to your own payout addresses.
 
 
   Point your Scrypt miner (e.g. Elphapex DG Home 1) at umbrel.local:50333.
-  The web UI is one stats page for both chains: engine, both nodes, chains,
-  job, pool, miners and blocks.
+  The web UI is one stats page for all chains: each chain, node, pool,
+  miners, blocks and settings.
 
 
-  On first run, open the app and set your LTC payout address (and a DOGE
-  address to also mine Dogecoin); your nodes check them. No work is issued
+  On first run, open the app and set your LTC payout address (and DOGE and
+  PEP addresses to also mine Dogecoin and Pepecoin); your nodes check them. No work is issued
   to miners until the LTC address is set.
 
 

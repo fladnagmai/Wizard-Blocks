@@ -1,0 +1,374 @@
+// Package nodestatus polls the Litecoin, Dogecoin and Pepecoin nodes over
+// RPC and serves one plain page with each node's live status (the page of
+// the Litecoin + Dogecoin Node Umbrel app).
+package nodestatus
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/fladnagmai/wizard-blocks/internal/node"
+)
+
+// Node is one node to watch.
+type Node struct {
+	Key      string // "ltc", "doge", "pep": used in the API
+	Name     string // "Litecoin Node"
+	RPC      *node.Client
+	Pausable bool         // its sync (p2p network) can be paused from the page
+	Prune    *PruneConfig // its prune target can be changed from the page (nil: no)
+	Cache    *CacheConfig // its dbcache can be changed from the page (needs Prune: same file)
+	// MemFile is where the node's container writes its resident memory in
+	// kB every 10 s (nodes/memwrap.sh); "" = not shown.
+	MemFile string
+}
+
+// Status is one node's state at the last check. Fields a node does not
+// report stay zero.
+type Status struct {
+	Key   string `json:"key"`
+	Name  string `json:"name"`
+	State string `json:"state"` // "synced", "syncing", "starting", "down"
+	// Pausable: the page offers pause/resume. Paused: a pause is in force
+	// (kept across node restarts). NetworkActive: the node's own p2p switch
+	// (nil if unknown).
+	Pausable      bool  `json:"pausable"`
+	Paused        bool  `json:"paused"`
+	NetworkActive *bool `json:"network_active,omitempty"`
+	// Prune target: as set (conf file, MiB) and as the running node reports
+	// it (MiB; differs until the node restarts), with the page's choices.
+	PruneSet     int   `json:"prune_set_mib,omitempty"`
+	PruneRunning int   `json:"prune_running_mib,omitempty"`
+	PruneOptions []int `json:"prune_options,omitempty"`
+	// Database cache (MiB) as set in the conf file, with the page's choices.
+	// The node does not report its running cache.
+	CacheSet     int   `json:"dbcache_mib,omitempty"`
+	CacheOptions []int `json:"dbcache_options,omitempty"`
+	// MemBytes is the node's resident memory as last reported by its
+	// container (0: not reported); MemAge is how old that report is (s).
+	MemBytes     int64   `json:"mem_bytes,omitempty"`
+	MemAge       int64   `json:"mem_age_s,omitempty"`
+	Error        string  `json:"error,omitempty"`
+	Version      string  `json:"version,omitempty"`
+	Chain        string  `json:"chain,omitempty"`
+	Blocks       int64   `json:"blocks"`
+	Headers      int64   `json:"headers"`
+	Progress     float64 `json:"progress"`             // verificationprogress, 0..1
+	Peers        *int    `json:"peers,omitempty"`      // nil: getnetworkinfo failed
+	MempoolTx    *int64  `json:"mempool_tx,omitempty"` // nil: getmempoolinfo failed
+	MempoolBytes int64   `json:"mempool_bytes"`
+	TipTime      int64   `json:"tip_time,omitempty"` // unix time of the best block
+	Difficulty   float64 `json:"difficulty"`
+	Pruned       bool    `json:"pruned"`
+	SizeOnDisk   int64   `json:"size_on_disk,omitempty"`
+	Checked      int64   `json:"checked"` // unix time of this check
+}
+
+// Poller checks every node each interval and keeps the latest statuses.
+type Poller struct {
+	nodes     []Node
+	interval  time.Duration
+	stateFile string // where pauses are kept ("" = memory only)
+
+	mu     sync.Mutex
+	last   []Status
+	paused map[string]bool // by node key
+	prune  map[string]int  // last prune target chosen on the page, by node key
+	cache  map[string]int  // last dbcache chosen on the page, by node key
+	// restart: nodes to stop (so their container restarts with the conf
+	// file just written) as soon as they answer RPC.
+	restart map[string]bool
+	// restartCache: same, for a changed cache (the node cannot report it, so
+	// the stop is not skipped when the prune target already matches).
+	restartCache map[string]bool
+}
+
+// NewPoller creates a poller for nodes (checked in this order). Pauses set
+// from the page are kept in stateFile (if set) and re-applied after a node
+// or this service restarts.
+func NewPoller(nodes []Node, interval time.Duration, stateFile string) *Poller {
+	p := &Poller{nodes: nodes, interval: interval, stateFile: stateFile, last: make([]Status, len(nodes)), paused: map[string]bool{}, prune: map[string]int{}, cache: map[string]int{},
+		restart: map[string]bool{}, restartCache: map[string]bool{}}
+	if stateFile != "" {
+		var saved struct {
+			Paused map[string]bool `json:"paused"`
+			Prune  map[string]int  `json:"prune_mib"`
+			Cache  map[string]int  `json:"dbcache_mib"`
+		}
+		if b, err := os.ReadFile(stateFile); err == nil && json.Unmarshal(b, &saved) == nil {
+			for _, n := range nodes {
+				if n.Pausable && saved.Paused[n.Key] {
+					p.paused[n.Key] = true
+				}
+				if n.Prune != nil && saved.Prune[n.Key] >= n.Prune.Min {
+					p.prune[n.Key] = saved.Prune[n.Key]
+				}
+				if n.Cache != nil && slices.Contains(n.Cache.Options, saved.Cache[n.Key]) {
+					p.cache[n.Key] = saved.Cache[n.Key]
+				}
+			}
+		}
+	}
+	for i, n := range nodes {
+		p.last[i] = Status{Key: n.Key, Name: n.Name, Pausable: n.Pausable, Paused: p.paused[n.Key], State: "starting", Error: "not checked yet"}
+	}
+	return p
+}
+
+// Errors from SetPaused.
+var (
+	ErrUnknownNode = errors.New("unknown node")
+	ErrNotPausable = errors.New("this node's sync cannot be paused here")
+)
+
+// SetPaused pauses (or resumes) a node's sync: its p2p network is switched
+// off (on) at once, and the choice is saved and re-applied on every check,
+// so it survives node restarts. Resuming always switches the network on.
+func (p *Poller) SetPaused(ctx context.Context, key string, paused bool) error {
+	n := p.node(key)
+	if n == nil {
+		return ErrUnknownNode
+	}
+	if !n.Pausable {
+		return ErrNotPausable
+	}
+	p.mu.Lock()
+	prev := p.paused[key]
+	p.paused[key] = paused
+	err := p.saveLocked()
+	if err != nil {
+		p.paused[key] = prev
+	}
+	p.mu.Unlock()
+	if err != nil {
+		return fmt.Errorf("cannot save the pause: %w", err)
+	}
+	if err := n.RPC.Call(ctx, "setnetworkactive", []any{!paused}, nil); err != nil {
+		// Saved anyway: the next check re-applies it once the node answers.
+		return fmt.Errorf("saved; the node did not answer yet (applied when it does): %w", err)
+	}
+	p.CheckAll(ctx)
+	return nil
+}
+
+func (p *Poller) node(key string) *Node {
+	for i := range p.nodes {
+		if p.nodes[i].Key == key {
+			return &p.nodes[i]
+		}
+	}
+	return nil
+}
+
+func (p *Poller) saveLocked() error {
+	if p.stateFile == "" {
+		return nil
+	}
+	b, _ := json.MarshalIndent(map[string]any{"paused": p.paused, "prune_mib": p.prune, "dbcache_mib": p.cache}, "", "  ")
+	tmp := p.stateFile + ".tmp"
+	if err := os.MkdirAll(filepath.Dir(p.stateFile), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, p.stateFile)
+}
+
+// Snapshot returns the latest statuses.
+func (p *Poller) Snapshot() []Status {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]Status(nil), p.last...)
+}
+
+// Run checks all nodes now and then every interval until ctx ends. Nodes
+// are checked concurrently so a slow or down node does not delay the other.
+func (p *Poller) Run(ctx context.Context) {
+	t := time.NewTicker(p.interval)
+	defer t.Stop()
+	for {
+		p.CheckAll(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// CheckAll checks every node once.
+func (p *Poller) CheckAll(ctx context.Context) {
+	var wg sync.WaitGroup
+	for i, n := range p.nodes {
+		wg.Add(1)
+		go func(i int, n Node) {
+			defer wg.Done()
+			cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			s := Check(cctx, n)
+			p.mu.Lock()
+			paused := p.paused[n.Key]
+			p.mu.Unlock()
+			// Keep a pause in force: a restarted node comes back with its
+			// network on.
+			if paused && s.NetworkActive != nil && *s.NetworkActive {
+				if n.RPC.Call(cctx, "setnetworkactive", []any{false}, nil) == nil {
+					off := false
+					s.NetworkActive = &off
+				}
+			}
+			s.Paused = paused
+			s.MemBytes, s.MemAge = readMem(n.MemFile)
+			if n.Prune != nil {
+				s.PruneOptions = n.Prune.Options
+				if v, c, err := readConf(n.Prune.ConfFile); err == nil {
+					s.PruneSet = v
+					if n.Cache != nil {
+						s.CacheSet, s.CacheOptions = c, n.Cache.Options
+					}
+				}
+			}
+			p.mu.Lock()
+			restart := p.restart[n.Key]
+			if restart && !p.restartCache[n.Key] && s.PruneSet > 0 && s.PruneRunning == s.PruneSet {
+				delete(p.restart, n.Key) // already running with it
+				restart = false
+			}
+			restart = restart || p.restartCache[n.Key]
+			p.mu.Unlock()
+			if restart && (s.State == "synced" || s.State == "syncing") && n.RPC.Call(cctx, "stop", nil, nil) == nil {
+				p.mu.Lock()
+				delete(p.restart, n.Key)
+				delete(p.restartCache, n.Key)
+				p.mu.Unlock()
+				s.State, s.Error = "starting", "restarting to apply its settings"
+			}
+			p.mu.Lock()
+			p.last[i] = s
+			p.mu.Unlock()
+		}(i, n)
+	}
+	wg.Wait()
+}
+
+// chainInfo is the part of getblockchaininfo shown (Litecoin Core 0.21 and
+// Dogecoin Core 1.14 both answer these fields).
+type chainInfo struct {
+	Chain         string  `json:"chain"`
+	Blocks        int64   `json:"blocks"`
+	Headers       int64   `json:"headers"`
+	BestBlockHash string  `json:"bestblockhash"`
+	Difficulty    float64 `json:"difficulty"`
+	Progress      float64 `json:"verificationprogress"`
+	Pruned        bool    `json:"pruned"`
+	SizeOnDisk    int64   `json:"size_on_disk"`
+	PruneTarget   int64   `json:"prune_target_size"` // bytes
+}
+
+// Check asks one node for its state.
+func Check(ctx context.Context, n Node) Status {
+	s := Status{Key: n.Key, Name: n.Name, Pausable: n.Pausable, Checked: time.Now().Unix()}
+	var ci chainInfo
+	if err := n.RPC.Call(ctx, "getblockchaininfo", nil, &ci); err != nil {
+		var re *node.RPCError
+		if errors.As(err, &re) && re.Code == -28 {
+			// RPC_IN_WARMUP: loading the block index, verifying blocks...
+			s.State, s.Error = "starting", strings.TrimSpace(re.Message)
+		} else {
+			s.State, s.Error = "down", err.Error()
+		}
+		return s
+	}
+	s.Chain, s.Blocks, s.Headers, s.Difficulty = ci.Chain, ci.Blocks, ci.Headers, ci.Difficulty
+	s.Progress, s.Pruned, s.SizeOnDisk = ci.Progress, ci.Pruned, ci.SizeOnDisk
+	s.PruneRunning = int(ci.PruneTarget / (1 << 20))
+	var ni struct {
+		Subversion    string `json:"subversion"`
+		Connections   int    `json:"connections"`
+		NetworkActive *bool  `json:"networkactive"`
+	}
+	if n.RPC.Call(ctx, "getnetworkinfo", nil, &ni) == nil {
+		s.Version, s.Peers, s.NetworkActive = ni.Subversion, &ni.Connections, ni.NetworkActive
+	}
+	var mi struct {
+		Size  int64 `json:"size"`
+		Bytes int64 `json:"bytes"`
+	}
+	if n.RPC.Call(ctx, "getmempoolinfo", nil, &mi) == nil {
+		s.MempoolTx, s.MempoolBytes = &mi.Size, mi.Bytes
+	}
+	if ci.BestBlockHash != "" {
+		var h struct {
+			Time int64 `json:"time"`
+		}
+		if n.RPC.Call(ctx, "getblockheader", []any{ci.BestBlockHash}, &h) == nil {
+			s.TipTime = h.Time
+		}
+	}
+	// Synced: has every header it knows of and has verified (nearly) the
+	// whole chain. A node with no headers yet is still finding peers.
+	if s.Headers > 0 && s.Blocks == s.Headers && s.Progress >= 0.9999 {
+		s.State = "synced"
+	} else {
+		s.State = "syncing"
+	}
+	return s
+}
+
+// readMem reads a node's resident memory report (kB, written by memwrap)
+// and its age; a report older than 2 minutes is ignored (node stopped).
+func readMem(path string) (bytes, age int64) {
+	if path == "" {
+		return 0, 0
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		return 0, 0
+	}
+	age = int64(time.Since(fi.ModTime()).Seconds())
+	if age > 120 {
+		return 0, 0
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0, 0
+	}
+	kb, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
+	if err != nil || kb <= 0 {
+		return 0, 0
+	}
+	return kb * 1024, age
+}
+
+// HostMemory returns the machine's total and available memory in bytes from
+// /proc/meminfo (a container sees the host's figures), or zeros.
+func HostMemory() (total, available int64) {
+	b, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return 0, 0
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 {
+			continue
+		}
+		v, _ := strconv.ParseInt(f[1], 10, 64)
+		switch f[0] {
+		case "MemTotal:":
+			total = v * 1024
+		case "MemAvailable:":
+			available = v * 1024
+		}
+	}
+	return total, available
+}
