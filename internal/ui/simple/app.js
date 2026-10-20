@@ -61,26 +61,59 @@ const odds = (v) => {
   return n >= 1e12 ? '1:' + (1 / v).toExponential(2).replace('e+', 'E') : '1:' + n.toLocaleString('en-US');
 };
 
-// Banner shown while an aux chain (Dogecoin) is not being merge-mined.
+// Banner line for an aux chain (Dogecoin, Pepecoin) that is not being
+// merge-mined right now; the parent and the other chains carry on.
 function bannerText(name, ticker, reason) {
   switch (reason) {
-    case 'no address': return `Mining ${name} only. Add a ${ticker} payout address in Settings to also mine ${ticker === 'DOGE' ? 'Dogecoin' : ticker}.`;
-    case 'node down': return `Mining ${name} only: the ${ticker === 'DOGE' ? 'Dogecoin' : ticker} node is down. ${ticker === 'DOGE' ? 'Dogecoin' : ticker} mining resumes on its own.`;
-    case 'node has no peers': return `Mining ${name} only: the ${ticker === 'DOGE' ? 'Dogecoin' : ticker} node has no peers (sync paused?). ${ticker === 'DOGE' ? 'Dogecoin' : ticker} mining resumes when it reconnects.`;
-    case 'node syncing': return `Mining ${name} only: the ${ticker === 'DOGE' ? 'Dogecoin' : ticker} node is syncing. ${ticker === 'DOGE' ? 'Dogecoin' : ticker} mining resumes on its own.`;
-    default: return `Mining ${name} only: ${ticker} merged mining is unavailable (${reason || 'unknown'}).`;
+    case 'no address': return `${name} is not merged: add a ${ticker} payout address in Settings to also mine ${name}.`;
+    case 'node down': return `${name} is not merged: its node is down. ${name} mining resumes on its own.`;
+    case 'node has no peers': return `${name} is not merged: its node has no peers (sync paused?). ${name} mining resumes when it reconnects.`;
+    case 'node syncing': return `${name} is not merged: its node is syncing. ${name} mining resumes on its own.`;
+    default: return `${name} is not merged: ${ticker} merged mining is unavailable (${reason || 'unknown'}).`;
   }
 }
 
 function renderChain(prefix, title, v, isAux) {
   set(prefix + '-status', isAux ? (v.merged ? 'merged' : 'not merged: ' + (v.reason || '—')) : (!v.connected ? 'no node connection' : v.synced ? 'synced' : 'syncing'), isAux ? !v.merged : !v.connected || !v.synced);
-  $(prefix === 'cp' ? 'cp-title' : 'ca-title').textContent = title;
+  $(prefix + '-title').textContent = title;
   set(prefix + '-height', v.height ? fmtInt(v.height) : '—');
   set(prefix + '-diff', fmtDiff(v.network_difficulty));
   set(prefix + '-effort', v.effort_pct == null ? '—' : v.effort_pct.toFixed(4) + ' %');
   set(prefix + '-exp', fmtSecs(v.expected_block_s));
   set(prefix + '-odds', `${odds(v.odds_day)} / ${odds(v.odds_week)}`);
   set(prefix + '-blocks', `${fmtInt(v.blocks_found)}${v.blocks_pending ? ` (+${v.blocks_pending} pending)` : ''}`);
+}
+
+// The aux chains in a fixed order (DOGE before PEP), each with its panel
+// and its payout field created once.
+const AUX_ORDER = ['doge', 'pep'];
+function auxNames(chains, parent) {
+  return Object.keys(chains || {}).filter((k) => k !== parent).sort((a, b) => {
+    const ia = AUX_ORDER.indexOf(a), ib = AUX_ORDER.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+  });
+}
+function ensureAux(name, c) {
+  if ($('ca-' + name)) return;
+  const dl = [['status', 'Status'], ['height', 'Height'], ['diff', 'Network diff'], ['effort', 'Effort'], ['exp', 'Expected block'],
+    ['odds', 'Odds (day / week)'], ['blocks', 'Blocks found']].map(([k, l]) => `<dt>${l}</dt><dd id="ca-${name}-${k}">—</dd>`).join('');
+  $('chains').insertAdjacentHTML('beforeend', `<section class="panel aux" id="ca-${name}"><h2 id="ca-${name}-title"></h2><dl>${dl}</dl></section>`);
+  const hint = esc(c.hint || '');
+  $('s-aux').insertAdjacentHTML('beforeend', `<div class="aux-pay" id="s-aux-${name}">
+    <label for="s-${name}">${esc(c.ticker)} payout address (optional)</label>
+    <div class="row"><input id="s-${name}" spellcheck="false" autocomplete="off" placeholder="${hint}"><button id="s-${name}-save">Save</button></div>
+    <p class="dim small">Set it to also mine ${esc(c.name)} with the same hashrate. Checked by your ${esc(c.name)} node. Leave empty to leave ${esc(c.name)} out.</p></div>`);
+  const input = $('s-' + name);
+  input.addEventListener('input', () => { input.dataset.dirty = '1'; });
+  $('s-' + name + '-save').addEventListener('click', async () => {
+    msg(`Checking with your ${c.name} node…`);
+    try {
+      const r = await api('api/admin/aux-payout', 'PUT', { chain: name, address: input.value.trim() });
+      delete input.dataset.dirty;
+      msg(r.address ? `${c.ticker} payout saved: ${r.address}` : `${c.ticker} payout cleared: ${c.name} is left out.`);
+      refresh();
+    } catch (e) { msg(e.message, true); }
+  });
 }
 
 let lastState = null;
@@ -97,22 +130,26 @@ function render(st) {
   $('s-addr-label').textContent = `${ticker || 'Payout'} payout address${hint ? ' (' + hint + ')' : ''}`;
 
   const chains = st.chains || null;
-  const auxName = chains ? Object.keys(chains).find((k) => k !== coin.coin) : null;
-  $('chains').hidden = !auxName;
-  $('s-doge-wrap').hidden = !auxName;
-  document.querySelectorAll('.chaincol').forEach((el) => { el.hidden = !auxName; });
-  if (auxName) {
-    const aux = chains[auxName], auxCoin = (st.aux_coins || {})[auxName] || { ticker: auxName.toUpperCase() };
-    $('title').textContent += ' + ' + auxCoin.ticker;
-    document.title += ' + ' + auxCoin.ticker;
+  const aux = chains ? auxNames(chains, coin.coin) : [];
+  const auxCoin = (name) => (st.aux_coins || {})[name] || { ticker: name.toUpperCase(), name: name.toUpperCase() };
+  $('chains').hidden = !aux.length;
+  document.querySelectorAll('.chaincol').forEach((el) => { el.hidden = !aux.length; });
+  const banner = [];
+  if (aux.length) {
     renderChain('cp', ticker, chains[coin.coin] || {}, false);
-    renderChain('ca', `${auxCoin.ticker} (MERGED)`, aux, true);
-    $('banner').hidden = !!aux.merged;
-    if (!aux.merged) $('banner').textContent = bannerText(coin.name || ticker, auxCoin.ticker, aux.reason);
-    if (document.activeElement !== $('s-doge') && !$('s-doge').dataset.dirty) $('s-doge').value = aux.payout_address || '';
-  } else {
-    $('banner').hidden = true;
+    for (const name of aux) {
+      const c = auxCoin(name), v = chains[name];
+      ensureAux(name, { ticker: c.ticker, name: c.name || c.ticker, hint: (c.address_hint || {})[st.chain] || '' });
+      $('title').textContent += ' + ' + c.ticker;
+      document.title += ' + ' + c.ticker;
+      renderChain('ca-' + name, `${c.ticker} (MERGED)`, v, true);
+      if (!v.merged) banner.push(bannerText(c.name || c.ticker, c.ticker, v.reason));
+      const input = $('s-' + name);
+      if (document.activeElement !== input && !input.dataset.dirty) input.value = v.payout_address || '';
+    }
   }
+  $('banner').hidden = !banner.length;
+  $('banner').textContent = banner.join(' ');
   set('n-synced', !n.connected ? 'no node connection' : n.synced ? 'yes' : `syncing ${fmtInt(n.height)} / ${fmtInt(n.headers)}`, !n.connected || !n.synced);
   set('n-height', fmtInt(n.height));
   set('n-zmq', !n.zmq_enabled ? 'off (polling)' : n.zmq_connected ? 'connected' : 'not connected', n.zmq_enabled && !n.zmq_connected);
@@ -155,21 +192,19 @@ function render(st) {
   // (stale, rejected) are left out.
   const real = (b) => b.chain_status !== 'stale' && b.status !== 'stale' && b.status !== 'rejected';
   let blocks = (st.blocks || []).filter(real).map((b) => ({ ...b, chainTicker: ticker }));
-  if (auxName) {
-    const auxCoin = (st.aux_coins || {})[auxName] || {};
-    const tmpl = (auxCoin.explorer || {})[st.chain];
-    blocks = blocks.concat((st.aux_blocks || []).filter(real).map((b) => ({
-      ...b, chainTicker: auxCoin.ticker || auxName.toUpperCase(),
-      explorer_url: tmpl ? tmpl.replace('{hash}', b.hash) : '', confirmations: null, chain_status: b.status,
-    })));
+  if (aux.length) {
+    blocks = blocks.concat((st.aux_blocks || []).filter(real).map((b) => {
+      const c = auxCoin(b.chain || ''), tmpl = (c.explorer || {})[st.chain];
+      return { ...b, chainTicker: c.ticker, explorer_url: tmpl ? tmpl.replace('{hash}', b.hash) : '', confirmations: null, chain_status: b.status };
+    }));
     blocks.sort((a, b) => Date.parse(b.time) - Date.parse(a.time));
   }
   blocks = blocks.slice(0, 50);
-  const cols = auxName ? 7 : 6;
+  const cols = aux.length ? 7 : 6;
   $('blocks').innerHTML = blocks.length ? blocks.map((b) => {
     const hash = esc(b.hash || ''), short = hash.slice(0, 12) + '…' + hash.slice(-8);
     const link = b.explorer_url ? `<a href="${esc(b.explorer_url)}" target="_blank" rel="noopener noreferrer">${short}</a>` : short;
-    return `<tr>${auxName ? `<td>${esc(b.chainTicker)}</td>` : ''}<td class="num">${esc(fmtInt(b.height))}</td><td>${link}</td><td>${esc(b.worker)}</td>
+    return `<tr>${aux.length ? `<td>${esc(b.chainTicker)}</td>` : ''}<td class="num">${esc(fmtInt(b.height))}</td><td>${link}</td><td>${esc(b.worker)}</td>
       <td>${esc(new Date(b.time).toLocaleString())}</td><td class="num">${b.confirmations == null ? '—' : esc(fmtInt(b.confirmations))}</td><td>${esc(b.chain_status || b.status)}</td></tr>`;
   }).join('') : `<tr><td colspan="${cols}" class="dim">No blocks found yet.</td></tr>`;
   updateCalc();
@@ -249,17 +284,6 @@ $('s-lim-reset').addEventListener('click', async () => {
     const r = await api('api/admin/limits', 'DELETE');
     fillLimits(r);
     msg(`Connection limits back to the defaults: ${r.limits.max_connections} total, ${r.limits.max_connections_per_ip} per IP.`);
-  } catch (e) { msg(e.message, true); }
-});
-
-$('s-doge').addEventListener('input', () => { $('s-doge').dataset.dirty = '1'; });
-$('s-doge-save').addEventListener('click', async () => {
-  msg('Checking with your Dogecoin node…');
-  try {
-    const r = await api('api/admin/doge-payout', 'PUT', { address: $('s-doge').value.trim() });
-    delete $('s-doge').dataset.dirty;
-    msg(r.doge_payout_address ? 'DOGE payout saved: ' + r.doge_payout_address : 'DOGE payout cleared: mining Litecoin only.');
-    refresh();
   } catch (e) { msg(e.message, true); }
 });
 

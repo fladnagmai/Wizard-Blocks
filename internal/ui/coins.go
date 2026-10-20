@@ -54,6 +54,12 @@ var Coins = map[string]CoinInfo{
 		AddressHint: map[string]string{"main": "D…", "test": "n…", "regtest": "m…"},
 		Explorer:    map[string]string{"main": "https://blockchair.com/dogecoin/block/{hash}"},
 	},
+	// Pepecoin is likewise only merge-mined. Coinbase maturity 240 after
+	// Digishield (pepecoin src/chainparams.cpp, v1.1.0).
+	"pep": {
+		Coin: "pep", Name: "Pepecoin", Ticker: "PEP", BlockTimeS: 60, Maturity: 240,
+		AddressHint: map[string]string{"main": "P…", "test": "n…", "regtest": "m…"},
+	},
 }
 
 // Creature rarity from a job's best share difficulty as a percentage of the

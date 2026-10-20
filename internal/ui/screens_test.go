@@ -30,14 +30,17 @@ func TestScreens(t *testing.T) {
 	type state struct {
 		name, coin, reason string
 		aux                bool
+		pep                string // "": no Pepecoin node; "merged" or the reason it is not
 	}
 	states := []state{
-		{"ltc-doge-merged", "ltc", "", true},
-		{"ltc-no-doge-address", "ltc", "no address", true},
-		{"ltc-doge-node-down", "ltc", "node down", true},
-		{"ltc-doge-node-syncing", "ltc", "node syncing", true},
-		{"btc", "btc", "", false},
-		{"bch", "bch", "", false},
+		{"ltc-doge-merged", "ltc", "", true, ""},
+		{"ltc-no-doge-address", "ltc", "no address", true, ""},
+		{"ltc-doge-node-down", "ltc", "node down", true, ""},
+		{"ltc-doge-node-syncing", "ltc", "node syncing", true, ""},
+		{"ltc-doge-pep-merged", "ltc", "", true, "merged"},
+		{"ltc-doge-pep-node-down", "ltc", "", true, "node down"},
+		{"btc", "btc", "", false, ""},
+		{"bch", "bch", "", false, ""},
 	}
 	urls := map[string]string{}
 	now := time.Now()
@@ -62,6 +65,16 @@ func TestScreens(t *testing.T) {
 					a.Address = "DQkwDpRYUyNNnoBjfERSzPWbKdtr2JUSyL"
 				}
 			})
+			if s.pep != "" {
+				st.SetAux("pep", func(a *stats.AuxStatus) {
+					a.Merged, a.Connected, a.ZMQ, a.Height, a.NetworkDiff = s.pep == "merged", s.pep != "node down", s.pep == "merged", 1234567, 3e6*65536
+					if s.pep != "merged" {
+						a.Reason = s.pep
+					}
+					a.Address = "PNAwjXQnK7m1Lr5WNuWMY4dsfpvTjfZXpE"
+				})
+				st.AuxBlockSubmitted(stats.BlockRecord{Chain: "pep", Height: 1234500, Hash: "e0e0f0f0a1a1b2b2c3c3d4d4e5e5f6f6a7a7b8b8c9c9dadaebebfcfc0d0d1e1e", Worker: "dghome1", Status: "accepted", Time: now.Add(-20 * time.Minute)})
+			}
 			st.AuxBlockSubmitted(stats.BlockRecord{Chain: "doge", Height: 5891100, Hash: "d0d0e0e0f0f0a1a1b2b2c3c3d4d4e5e5f6f6a7a7b8b8c9c9dadaebebfcfc0d0d", Worker: "dghome1", Status: "accepted", Time: now.Add(-40 * time.Minute)})
 		}
 		// Shares after the blocks, so effort shows.
@@ -98,8 +111,8 @@ type screenBackend struct {
 	aux bool
 }
 
-func (f *screenBackend) DogePayout() (string, bool)                            { return "", f.aux }
-func (f *screenBackend) SetDogePayout(context.Context, string) (string, error) { return "", nil }
+func (f *screenBackend) AuxPayout(string) (string, bool)                              { return "", f.aux }
+func (f *screenBackend) SetAuxPayout(context.Context, string, string) (string, error) { return "", nil }
 
 var screenLimits = stratum.ConnLimits{MaxConnections: 1024, MaxPerIP: 64}
 

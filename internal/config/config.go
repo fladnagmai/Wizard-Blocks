@@ -24,10 +24,10 @@ type Node struct {
 	RPCTimeoutS      int    `json:"rpc_timeout_s"`
 }
 
-// Doge configures Dogecoin merged mining on top of a Litecoin parent. It
-// is off when RPCURL is empty; with a node but no PayoutAddress the engine
-// mines Litecoin only and says so.
-type Doge struct {
+// AuxNode configures one merged-mined aux chain (Dogecoin, Pepecoin) on top
+// of a Litecoin parent. It is off when RPCURL is empty; with a node but no
+// PayoutAddress the chain is not merged and the page says so.
+type AuxNode struct {
 	RPCURL         string `json:"rpc_url"`
 	RPCUser        string `json:"rpc_user"`
 	RPCPassword    string `json:"rpc_password"`
@@ -38,8 +38,8 @@ type Doge struct {
 	RefreshS       int    `json:"refresh_s"`
 }
 
-// Enabled reports whether a Dogecoin node is configured.
-func (d Doge) Enabled() bool { return d.RPCURL != "" }
+// Enabled reports whether the aux node is configured.
+func (d AuxNode) Enabled() bool { return d.RPCURL != "" }
 
 // Payout configures where block rewards go.
 type Payout struct {
@@ -106,7 +106,8 @@ type Log struct {
 type Config struct {
 	Coin    string  `json:"coin"`
 	Node    Node    `json:"node"`
-	Doge    Doge    `json:"doge"`
+	Doge    AuxNode `json:"doge"`
+	Pep     AuxNode `json:"pep"`
 	Payout  Payout  `json:"payout"`
 	Stratum Stratum `json:"stratum"`
 	Vardiff Vardiff `json:"vardiff"`
@@ -133,7 +134,8 @@ func Default() Config {
 	return Config{
 		Coin: "btc",
 		Node: Node{RPCURL: "http://127.0.0.1:8332", PollIntervalMs: 1000, TemplateRefreshS: 30, RPCTimeoutS: 30},
-		Doge: Doge{PollIntervalMs: 1000, RefreshS: 5},
+		Doge: AuxNode{PollIntervalMs: 1000, RefreshS: 5},
+		Pep:  AuxNode{PollIntervalMs: 1000, RefreshS: 5},
 		Payout: Payout{
 			Mode: "fixed", CoinbaseTag: "/wizard-blocks/",
 		},
@@ -198,7 +200,10 @@ func (c *Config) applyEnv(env func(string) string) error {
 		"WB_DOGE_RPC_URL": &c.Doge.RPCURL, "WB_DOGE_RPC_USER": &c.Doge.RPCUser, "WB_DOGE_RPC_PASSWORD": &c.Doge.RPCPassword,
 		"WB_DOGE_RPC_COOKIE_FILE": &c.Doge.RPCCookieFile, "WB_DOGE_ZMQ_HASHBLOCK": &c.Doge.ZMQHashBlock,
 		"WB_DOGE_PAYOUT_ADDRESS": &c.Doge.PayoutAddress,
-		"WB_DATA_DIR":            &c.DataDir, "WB_UI_LISTEN": &c.UI.Listen, "WB_UI_STYLE": &c.UI.Style, "WB_UI_ADMIN_PASSWORD": &c.UI.AdminPassword,
+		"WB_PEP_RPC_URL":         &c.Pep.RPCURL, "WB_PEP_RPC_USER": &c.Pep.RPCUser, "WB_PEP_RPC_PASSWORD": &c.Pep.RPCPassword,
+		"WB_PEP_RPC_COOKIE_FILE": &c.Pep.RPCCookieFile, "WB_PEP_ZMQ_HASHBLOCK": &c.Pep.ZMQHashBlock,
+		"WB_PEP_PAYOUT_ADDRESS": &c.Pep.PayoutAddress,
+		"WB_DATA_DIR":           &c.DataDir, "WB_UI_LISTEN": &c.UI.Listen, "WB_UI_STYLE": &c.UI.Style, "WB_UI_ADMIN_PASSWORD": &c.UI.AdminPassword,
 	}
 	for k, p := range str {
 		if v, ok := lookup(env, k); ok {
@@ -210,6 +215,7 @@ func (c *Config) applyEnv(env func(string) string) error {
 		"WB_EXTRANONCE2_SIZE": &c.Stratum.Extranonce2Size, "WB_MAX_CONNECTIONS": &c.Stratum.MaxConnections,
 		"WB_MAX_CONNECTIONS_PER_IP": &c.Stratum.MaxConnsPerIP, "WB_STRATUM_PUBLIC_PORT": &c.Stratum.PublicPort,
 		"WB_DOGE_POLL_INTERVAL_MS": &c.Doge.PollIntervalMs, "WB_DOGE_REFRESH_S": &c.Doge.RefreshS,
+		"WB_PEP_POLL_INTERVAL_MS": &c.Pep.PollIntervalMs, "WB_PEP_REFRESH_S": &c.Pep.RefreshS,
 	}
 	for k, p := range ints {
 		if v, ok := lookup(env, k); ok {
@@ -312,24 +318,31 @@ func (c *Config) Validate() error {
 	if c.Node.RPCTimeoutS < 1 {
 		add("node.rpc_timeout_s must be positive")
 	}
-	if c.Doge.Enabled() {
+	for _, a := range []struct {
+		name string
+		n    AuxNode
+	}{{"doge", c.Doge}, {"pep", c.Pep}} {
+		if !a.n.Enabled() {
+			if a.n.PayoutAddress != "" {
+				add("%s.payout_address is set but no %s.rpc_url", a.name, a.name)
+			}
+			continue
+		}
 		if c.Coin != "ltc" {
-			add("doge merged mining needs coin ltc (the Scrypt parent), got %q", c.Coin)
+			add("%s merged mining needs coin ltc (the Scrypt parent), got %q", a.name, c.Coin)
 		}
-		if c.Doge.RPCUser == "" && c.Doge.RPCCookieFile == "" {
-			add("doge.rpc_user/rpc_password or doge.rpc_cookie_file is required")
+		if a.n.RPCUser == "" && a.n.RPCCookieFile == "" {
+			add("%s.rpc_user/rpc_password or %s.rpc_cookie_file is required", a.name, a.name)
 		}
-		if c.Doge.ZMQHashBlock != "" && !strings.HasPrefix(c.Doge.ZMQHashBlock, "tcp://") {
-			add("doge.zmq_hashblock must be tcp://host:port")
+		if a.n.ZMQHashBlock != "" && !strings.HasPrefix(a.n.ZMQHashBlock, "tcp://") {
+			add("%s.zmq_hashblock must be tcp://host:port", a.name)
 		}
-		if c.Doge.PollIntervalMs < 100 || c.Doge.PollIntervalMs > 60000 {
-			add("doge.poll_interval_ms must be 100..60000")
+		if a.n.PollIntervalMs < 100 || a.n.PollIntervalMs > 60000 {
+			add("%s.poll_interval_ms must be 100..60000", a.name)
 		}
-		if c.Doge.RefreshS < 1 || c.Doge.RefreshS > 600 {
-			add("doge.refresh_s must be 1..600")
+		if a.n.RefreshS < 1 || a.n.RefreshS > 600 {
+			add("%s.refresh_s must be 1..600", a.name)
 		}
-	} else if c.Doge.PayoutAddress != "" {
-		add("doge.payout_address is set but no doge.rpc_url")
 	}
 	switch c.Payout.Mode {
 	case "fixed":

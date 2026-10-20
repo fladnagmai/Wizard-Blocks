@@ -19,8 +19,8 @@ const cfg = JSON.parse(process.argv[2]);
       const file = `${cfg.out}/${name}-${vname}.png`;
       await page.screenshot({ path: file, fullPage: true });
       const banner = await page.evaluate(() => { const b = document.getElementById('banner'); return b.offsetParent === null ? '' : b.textContent; });
-      const shown = await page.evaluate(() => Object.fromEntries(['chains', 'banner', 's-doge-wrap', 'diff'].map((id) => [id, document.getElementById(id).offsetParent !== null])));
-      const oddsTxt = await page.evaluate(() => ['p-odds', 'cp-odds', 'ca-odds'].map((id) => (document.getElementById(id) || {}).textContent || '').join(' '));
+      const shown = await page.evaluate(() => Object.fromEntries(['chains', 'banner', 's-aux-doge', 's-aux-pep', 'diff'].map((id) => [id, !!document.getElementById(id) && document.getElementById(id).offsetParent !== null])));
+      const oddsTxt = await page.evaluate(() => ['p-odds', 'cp-odds', 'ca-doge-odds', 'ca-pep-odds'].map((id) => (document.getElementById(id) || {}).textContent || '').join(' '));
       if (/%/.test(oddsTxt) || !/^(—|1:[\d,.E]+)( \/ (—|1:[\d,.E]+))*\s*/.test(oddsTxt.trim())) errors.push('block odds not shown as 1:N: ' + oddsTxt);
       // Per-coin accent, TEST note only for the test build, every settings control present.
       const color = await page.evaluate(() => getComputedStyle(document.body).color);
@@ -29,7 +29,7 @@ const cfg = JSON.parse(process.argv[2]);
       const note = await page.evaluate(() => document.getElementById('testnote').offsetParent !== null);
       if (note !== name.startsWith('ltc')) errors.push('TEST note shown=' + note);
       const title = await page.evaluate(() => document.getElementById('title').textContent);
-      if (title !== 'WIZARD-BLOCKS-' + name.split('-')[0].toUpperCase() + (name.startsWith('ltc') ? ' + DOGE' : '')) errors.push('title ' + title);
+      if (title !== 'WIZARD-BLOCKS-' + name.split('-')[0].toUpperCase() + (name.startsWith('ltc') ? ' + DOGE' : '') + (name.includes('pep') ? ' + PEP' : '')) errors.push('title ' + title);
       const ctl = await page.evaluate(() => ['d-mode', 'd-start', 'd-min', 'd-max', 'd-target', 'd-fixed', 'd-over', 'd-pw', 'd-sg', 'd-save', 'd-reset',
         's-addr', 's-save', 's-maxconn', 's-maxip', 's-lim-save', 's-lim-reset', 's-pw', 's-setpw'].filter((id) => { const e = document.getElementById(id); return !e || e.offsetParent === null; }));
       if (ctl.length) errors.push('settings controls missing or hidden: ' + ctl.join(','));
@@ -38,8 +38,9 @@ const cfg = JSON.parse(process.argv[2]);
       const sfile = `${cfg.out}/${name}-settings-${vname}.png`;
       await page.locator('#settings').screenshot({ path: sfile });
       await page.locator('#diff').screenshot({ path: `${cfg.out}/${name}-difficulty-${vname}.png` });
-      const wantAux = name.startsWith('ltc'), wantBanner = name.startsWith('ltc') && name !== 'ltc-doge-merged';
-      if (shown.chains !== wantAux || shown['s-doge-wrap'] !== wantAux || shown.banner !== wantBanner || !shown.diff) {
+      const wantAux = name.startsWith('ltc'), wantPep = name.includes('pep');
+      const wantBanner = name.startsWith('ltc') && name !== 'ltc-doge-merged' && name !== 'ltc-doge-pep-merged';
+      if (shown.chains !== wantAux || shown['s-aux-doge'] !== wantAux || shown['s-aux-pep'] !== wantPep || shown.banner !== wantBanner || !shown.diff) {
         errors.push('visibility wrong: ' + JSON.stringify(shown));
       }
       console.log(`${name} ${vname}: ${file}${banner ? ' | banner: ' + banner : ''}${overflow ? ' | HORIZONTAL OVERFLOW' : ''}${errors.length ? ' | JS ERRORS: ' + errors.join('; ') : ''}`);

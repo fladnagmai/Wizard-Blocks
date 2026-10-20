@@ -17,15 +17,31 @@ import (
 
 type dogeFake struct {
 	fakeBackend
-	doge string
+	doge, pep string
 }
 
-func (f *dogeFake) DogePayout() (string, bool) { return f.doge, true }
-func (f *dogeFake) SetDogePayout(_ context.Context, addr string) (string, error) {
-	if addr != "" && !strings.HasPrefix(addr, "D") {
-		return "", errors.New("Dogecoin node does not confirm DOGE address")
+func (f *dogeFake) AuxPayout(chain string) (string, bool) {
+	switch chain {
+	case "doge":
+		return f.doge, true
+	case "pep":
+		return f.pep, true
 	}
-	f.doge = addr
+	return "", false
+}
+func (f *dogeFake) SetAuxPayout(_ context.Context, chain, addr string) (string, error) {
+	switch chain {
+	case "doge":
+		if addr != "" && !strings.HasPrefix(addr, "D") {
+			return "", errors.New("Dogecoin node does not confirm DOGE address")
+		}
+		f.doge = addr
+	case "pep":
+		if addr != "" && !strings.HasPrefix(addr, "P") {
+			return "", errors.New("Pepecoin node does not confirm PEP address")
+		}
+		f.pep = addr
+	}
 	return addr, nil
 }
 
@@ -101,6 +117,16 @@ func TestDogePayoutEndpoint(t *testing.T) {
 	}
 	if code, _ := c.do("PUT", "/api/admin/doge-payout", `{"address":""}`, true); code != 200 || fb.doge != "" {
 		t.Fatalf("clear: %d %q", code, fb.doge)
+	}
+	// The PEP address goes through aux-payout; an unknown chain is 404.
+	if code, m := c.do("PUT", "/api/admin/aux-payout", `{"chain":"pep","address":"Pabc"}`, true); code != 200 || fb.pep != "Pabc" || m["address"] != "Pabc" || m["chain"] != "pep" {
+		t.Fatalf("set pep: %d %v", code, m)
+	}
+	if code, m := c.do("PUT", "/api/admin/aux-payout", `{"chain":"pep","address":"Dnotpep"}`, true); code != 400 || fb.pep != "Pabc" {
+		t.Fatalf("refused pep address: %d %v", code, m)
+	}
+	if code, _ := c.do("PUT", "/api/admin/aux-payout", `{"chain":"btc","address":"x"}`, true); code != 404 {
+		t.Fatalf("unknown chain: %d", code)
 	}
 	// An engine without merged mining answers 404.
 	_, _, base := startUI(t, "pw")
