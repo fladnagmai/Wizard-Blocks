@@ -2,7 +2,7 @@ manifestVersion: 1
 id: fladnagmai-ltc-doge-node
 category: bitcoin
 name: Litecoin + Dogecoin Node
-version: "1.1.0-wb1"
+version: "0.0.1-beta"
 tagline: Pruned Litecoin Core, Dogecoin Core and Pepecoin Core nodes in one app, with a live status page
 icon: https://raw.githubusercontent.com/fladnagmai/Wizard-Blocks/main/fladnagmai-ltc-doge-node/icon.svg
 description: >-
@@ -31,7 +31,7 @@ description: >-
   every chain once even though they are pruned; on a home connection that
   takes days.
 releaseNotes: >-
-  Small fixes.
+  Beta.
 developer: fladnagmai
 website: https://github.com/fladnagmai/Wizard-Blocks
 dependencies: []

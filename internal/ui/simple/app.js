@@ -132,7 +132,6 @@ function render(st) {
   $('title').textContent = 'WIZARD-BLOCKS' + (ticker ? '-' + ticker : '');
   document.title = 'Wizard-Blocks' + (ticker ? '-' + ticker : '');
   document.documentElement.dataset.coin = coin.coin || '';
-  $('testnote').hidden = !/test/i.test(st.version || '');
   const hint = (coin.address_hint || {})[st.chain] || '';
   $('s-addr').placeholder = hint;
   $('s-addr-label').textContent = `${ticker || 'Payout'} payout address${hint ? ' (' + hint + ')' : ''}`;

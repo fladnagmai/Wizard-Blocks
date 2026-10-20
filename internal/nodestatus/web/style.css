@@ -1,12 +1,15 @@
 html, body { margin: 0; background: #000; color: #ff69b4; }
-body { font: 14px/1.5 ui-monospace, Menlo, Consolas, "DejaVu Sans Mono", monospace; -webkit-text-size-adjust: 100%; }
+body { font: bold 14px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; -webkit-text-size-adjust: 100%; }
+/* Faint binary rain behind everything, as on the mining pages. */
+#rain { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+header, main, footer { position: relative; z-index: 1; }
 header, main, footer { max-width: 1200px; margin: 0 auto; padding: 0 16px; box-sizing: border-box; }
 header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; padding-top: 16px; }
-h1 { margin: 0; font-size: 18px; letter-spacing: 1px; }
+h1 { margin: 0; font-size: 20px; letter-spacing: 1px; }
 #checked, .dim { color: #b04d84; }
 main { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-top: 14px; }
-.node { border: 1px solid #ff69b4; padding: 12px 14px; display: flex; flex-direction: column; min-width: 0; }
-.node h2 { margin: 0 0 4px; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; }
+.node { border: 1px solid #ff69b4; background: rgba(0, 0, 0, 0.78); padding: 12px 14px; display: flex; flex-direction: column; min-width: 0; }
+.node h2 { margin: 0 0 6px; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; }
 .state { margin: 0 0 10px; padding-bottom: 8px; border-bottom: 1px solid #b04d84; overflow-wrap: anywhere; }
 .state.bad { color: #ff4d4d; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; margin: 0 0 12px; }

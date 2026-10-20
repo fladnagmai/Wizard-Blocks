@@ -9,9 +9,9 @@ services:
       APP_PORT: 8420
 
   engine:
-    # Wizard-Blocks engine test build with Litecoin + Dogecoin + Pepecoin merged mining
+    # Wizard-Blocks engine with Litecoin + Dogecoin + Pepecoin merged mining
     # (.github/workflows/image.yml; the digest is added at the approved build).
-    image: ghcr.io/fladnagmai/wizard-blocks:0.2.0-test3@sha256:2b7163d0538022a0b47a858567a309964604a78fb249fc61b3bb0c01c31a4622
+    image: ghcr.io/fladnagmai/wizard-blocks:0.0.1-beta
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 90s          # lets an in-flight block submission finish

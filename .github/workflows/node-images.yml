@@ -42,8 +42,8 @@ jobs:
           - name: node-status
             context: .
             file: nodes/status/Dockerfile
-            version: 0.3.0
-            tag: 0.3.0
+            version: 0.0.1-beta
+            tag: 0.0.1-beta
     steps:
       - uses: actions/checkout@v4
       - if: matrix.name == 'node-status'

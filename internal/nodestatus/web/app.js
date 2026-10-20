@@ -214,5 +214,54 @@ async function refresh() {
   }
 }
 
+
+// ---------- binary rain: evenly spaced columns, alternating up/down (as on the mining pages) ----------
+(() => {
+  const cv = document.getElementById('rain'), ctx = cv.getContext('2d');
+  const STEP = 1000 / 30, FONT = 14, LINE = 16, GAP = 22;
+  let cols = [], raf = 0, last = 0, w = 0, h = 0;
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function resize() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    w = window.innerWidth; h = window.innerHeight;
+    cv.width = w * dpr; cv.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const n = Math.ceil(w / GAP), rows = Math.ceil(h / LINE) + 2;
+    cols = Array.from({ length: n }, (_, i) => ({
+      x: Math.round(i * GAP + GAP / 2), dir: i % 2 === 0 ? -1 : 1, speed: 18 + ((i * 37) % 23),
+      off: Math.random() * LINE, bits: Array.from({ length: rows }, () => (Math.random() < 0.5 ? '0' : '1')),
+    }));
+    draw(0);
+  }
+  function draw(dt) {
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = 'rgba(190, 190, 190, 0.10)';
+    ctx.font = `${FONT}px ui-monospace, Menlo, Consolas, monospace`;
+    ctx.textAlign = 'center';
+    for (const c of cols) {
+      c.off += c.speed * dt;
+      while (c.off >= LINE) {
+        c.off -= LINE;
+        if (c.dir < 0) { c.bits.shift(); c.bits.push(Math.random() < 0.5 ? '0' : '1'); } else { c.bits.pop(); c.bits.unshift(Math.random() < 0.5 ? '0' : '1'); }
+      }
+      const shift = c.dir < 0 ? -c.off : c.off - LINE;
+      for (let r = 0; r < c.bits.length; r++) ctx.fillText(c.bits[r], c.x, r * LINE + shift + FONT);
+    }
+  }
+  function frame(ts) {
+    raf = requestAnimationFrame(frame);
+    if (ts - last < STEP) return;
+    const dt = last ? Math.min(0.1, (ts - last) / 1000) : 0;
+    last = ts;
+    draw(dt);
+  }
+  const start = () => { if (!raf && !still) { last = 0; raf = requestAnimationFrame(frame); } };
+  const stop = () => { cancelAnimationFrame(raf); raf = 0; };
+  window.addEventListener('resize', resize);
+  document.addEventListener('visibilitychange', () => (document.hidden ? stop() : start()));
+  resize();
+  if (!document.hidden) start();
+})();
+
 refresh();
 setInterval(() => { if (!document.hidden) refresh(); }, 5000);

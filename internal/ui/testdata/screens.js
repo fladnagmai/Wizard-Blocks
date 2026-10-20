@@ -23,12 +23,11 @@ const cfg = JSON.parse(process.argv[2]);
       const oddsTxt = await page.evaluate(() => ['p', 'cp', 'ca-doge', 'ca-pep'].flatMap((p) => [p + '-odds-day', p + '-odds-week']).map((id) => document.getElementById(id)).filter(Boolean).map((e) => e.textContent));
       // One value per row (per day, per week), each 1:N or — before there is a hashrate.
       if (oddsTxt.length < 4 || oddsTxt.some((x) => !/^(—|1:[\d,.E]+)$/.test(x))) errors.push('block chance not 1:N per day and per week: ' + JSON.stringify(oddsTxt));
-      // Per-coin accent, TEST note only for the test build, every settings control present.
+      // Per-coin accent, no TEST note anywhere, every settings control present.
       const color = await page.evaluate(() => getComputedStyle(document.body).color);
-      const wantColor = { btc: 'rgb(247, 147, 26)', bch: 'rgb(10, 193, 142)', ltc: 'rgb(143, 180, 255)' }[name.split('-')[0]];
+      const wantColor = { btc: 'rgb(247, 147, 26)', bch: 'rgb(10, 193, 142)', ltc: 'rgb(255, 105, 180)' }[name.split('-')[0]];
       if (color !== wantColor) errors.push('accent colour ' + color + ', want ' + wantColor);
-      const note = await page.evaluate(() => document.getElementById('testnote').offsetParent !== null);
-      if (note !== name.startsWith('ltc')) errors.push('TEST note shown=' + note);
+      if (await page.evaluate(() => /\bTEST\b/.test(document.body.innerText))) errors.push('the page says TEST');
       const title = await page.evaluate(() => document.getElementById('title').textContent);
       if (title !== 'WIZARD-BLOCKS-' + name.split('-')[0].toUpperCase() + (name.startsWith('ltc') ? ' + DOGE' : '') + (name.includes('pep') ? ' + PEP' : '')) errors.push('title ' + title);
       const ctl = await page.evaluate(() => ['d-mode', 'd-start', 'd-min', 'd-max', 'd-target', 'd-fixed', 'd-over', 'd-pw', 'd-sg', 'd-save', 'd-reset',

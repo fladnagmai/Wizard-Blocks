@@ -2,7 +2,7 @@
 /* Each coin's own accent; the layout is the same for all of them. */
 :root[data-coin="btc"] { --g: #f7931a; --g2: #d97f10; --dim: #9a5c0f; --hov: #2e1a03; --line: rgba(247, 147, 26, 0.14); }
 :root[data-coin="bch"] { --g: #0ac18e; --g2: #09a478; --dim: #07785a; --hov: #022a1f; --line: rgba(10, 193, 142, 0.14); }
-:root[data-coin="ltc"] { --g: #8fb4ff; --g2: #6f97e8; --dim: #4f6aa0; --hov: #0d1830; --line: rgba(143, 180, 255, 0.14); }
+:root[data-coin="ltc"] { --g: #ff69b4; --g2: #e0559c; --dim: #b04d84; --hov: #2e0f20; --line: rgba(255, 105, 180, 0.14); }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { margin: 0; min-height: 100%; background: #000; }
