@@ -2,8 +2,8 @@ manifestVersion: 1
 id: fladnagmai-wizard-blocks
 category: crypto
 name: Wizard-Blocks-BCH
-version: "0.1.9-alpha"
-tagline: Solo-mine Bitcoin Cash on your own node, with a pixel-art wizard
+version: "1.0.0-beta"
+tagline: Solo-mine Bitcoin Cash on your own node
 icon: https://raw.githubusercontent.com/fladnagmai/Wizard-Blocks/main/fladnagmai-wizard-blocks/icon.svg
 description: >-
   Wizard-Blocks is a self-hosted solo-mining Stratum V1 server for Bitcoin Cash.
@@ -11,17 +11,17 @@ description: >-
   block reward plus fees goes to your own payout address.
 
 
-  Point your Bitaxe, NerdQaxe or ASIC at umbrel.local:62023. The web UI shows a
-  16-bit mine where a wizard digs for blocks (The Mine) and all the details
-  (The Ledger): hashrate, workers, shares, odds, found blocks and settings.
+  Point your Bitaxe, NerdQaxe or ASIC at umbrel.local:62023. The web UI is a
+  single stats page: node, pool, workers, block chance, found blocks and
+  settings.
 
 
-  On first run, open the app, go to The Ledger, Settings, and set your
-  CashAddr payout address. No work is issued to miners until it is set and
+  On first run, open the app and set your CashAddr payout address in
+  Settings. No work is issued to miners until it is set and
   verified by your node. Settings are open to anyone logged into Umbrel; you
   can add an optional settings password there.
 releaseNotes: >-
-  Small fixes.
+  Beta.
 developer: fladnagmai
 website: https://github.com/fladnagmai/Wizard-Blocks
 dependencies:

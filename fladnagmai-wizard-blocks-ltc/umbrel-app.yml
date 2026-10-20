@@ -1,12 +1,12 @@
 manifestVersion: 1
 id: fladnagmai-wizard-blocks-ltc
 category: crypto
-name: Wizard-Blocks² (test)
-version: "0.2.0-test3"
-tagline: Solo-mine Litecoin and merge-mine Dogecoin and Pepecoin on your own nodes (test build)
+name: Wizard-Blocks³
+version: "1.0.0-beta"
+tagline: Solo-mine Litecoin and merge-mine Dogecoin and Pepecoin on your own nodes
 icon: https://raw.githubusercontent.com/fladnagmai/Wizard-Blocks/main/fladnagmai-wizard-blocks-ltc/icon.svg
 description: >-
-  TEST BUILD. Wizard-Blocks-LTC is a self-hosted solo-mining Stratum V1
+  Wizard-Blocks³ is a self-hosted solo-mining Stratum V1
   server for Litecoin with Dogecoin and Pepecoin merged mining: every share
   is checked against every chain, so one Scrypt miner mines LTC, DOGE and
   PEP at once. It talks to your Litecoin + Dogecoin Node app over RPC and
@@ -27,10 +27,8 @@ description: >-
   each new job would produce (everything except the proof of work), so you
   can see real blocks are being built correctly before one is found.
 
-
-  Test build: use for testing.
 releaseNotes: >-
-  Test build.
+  Beta.
 developer: fladnagmai
 website: https://github.com/fladnagmai/Wizard-Blocks
 dependencies:

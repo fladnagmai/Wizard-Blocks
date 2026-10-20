@@ -37,124 +37,102 @@ function state(n) {
 function base(n) {
   switch (n.state) {
     case 'synced': return 'synced';
-    case 'syncing': return n.headers > 0 ? `syncing ${(n.progress * 100).toFixed(2)}%` : 'syncing (finding peers)';
+    // The node's own estimate (verificationprogress) can read ~100% early in
+    // a sync when its chain data is old (Pepecoin), so blocks / headers caps it.
+    case 'syncing': return n.headers > 0 ? `syncing ${(Math.min(n.progress, n.blocks / n.headers) * 100).toFixed(2)}%` : 'syncing (finding peers)';
     case 'starting': return `starting: ${n.error || ''}`.trim();
     default: return `down: ${n.error || 'not reachable'}`;
   }
 }
 
-function render(st) {
-  const lines = ['Litecoin + Dogecoin Node', ''];
-  for (const n of st.nodes || []) {
-    lines.push(n.name);
-    lines.push(`  status       ${state(n)}`);
-    if (n.mem_bytes) lines.push(`  memory       ${bytes(n.mem_bytes)}`);
-    if (n.state === 'synced' || n.state === 'syncing') {
-      lines.push(`  height       ${int(n.blocks)} / ${int(n.headers)} headers`);
-      lines.push(`  last block   ${n.tip_time ? ago(st.now - n.tip_time) : '-'}`);
-      lines.push(`  peers        ${n.peers === undefined ? '-' : int(n.peers)}`);
-      lines.push(`  mempool      ${n.mempool_tx === undefined ? '-' : `${int(n.mempool_tx)} tx (${bytes(n.mempool_bytes)})`}`);
-      lines.push(`  difficulty   ${si(n.difficulty)}`);
-      lines.push(`  disk         ${n.size_on_disk ? bytes(n.size_on_disk) : '-'}${n.pruned ? ' (pruned)' : ''}`);
-      if (n.prune_set_mib || n.prune_running_mib) {
-        const pend = n.prune_set_mib && n.prune_running_mib && n.prune_set_mib !== n.prune_running_mib ? ` (set ${int(n.prune_set_mib)} MiB, applies on restart)` : '';
-        lines.push(`  prune        ${int(n.prune_running_mib || n.prune_set_mib)} MiB${pend}`);
-      }
-      if (n.dbcache_mib) {
-        lines.push(`  cache        ${int(n.dbcache_mib)} MiB`);
-      }
-      if (n.chain && n.chain !== 'main') lines.push(`  chain        ${n.chain}`);
-      lines.push(`  version      ${n.version || '-'}`);
-    }
-    lines.push('');
-  }
-  const mem = (st.nodes || []).reduce((a, n) => a + (n.mem_bytes || 0), 0);
-  if (mem) {
-    const host = st.host_mem_total ? ` of ${bytes(st.host_mem_total)} on this machine (${bytes(st.host_mem_available)} available)` : '';
-    lines.push(`memory, all nodes: ${bytes(mem)}${host}`);
-  }
-  lines.push(`checked ${ago(st.now - Math.min(...(st.nodes || []).map((n) => n.checked || st.now)))}`);
-  document.getElementById('out').textContent = lines.join('\n');
-  controls(st.nodes || []);
+// el creates an element with text (never HTML).
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
 }
 
-// Controls: pause/resume for the nodes whose sync may be paused (Dogecoin,
-// so the Litecoin node has the bandwidth and disk while it syncs), and each
-// node's prune target (applying it restarts that node).
-let busy = false;
-const picked = {}; // prune target chosen in a menu but not applied yet, by node key
-function controls(nodes) {
-  const box = document.getElementById('controls');
+function render(st) {
+  const box = document.getElementById('nodes');
   // Do not rebuild under the user's hands (an open menu would close).
   if (box.contains(document.activeElement) && document.activeElement.tagName === 'SELECT') return;
-  const rows = [];
-  for (const n of nodes) {
-    const coin = n.name.replace(' Node', '');
-    if (n.pausable) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.disabled = busy;
-      b.textContent = n.paused ? `resume ${coin} sync` : `pause ${coin} sync`;
-      b.addEventListener('click', () => setPaused(n, !n.paused));
-      rows.push(b);
-    }
-    if (n.prune_options && n.prune_options.length) {
-      const row = document.createElement('span');
-      row.className = 'prune';
-      const label = document.createElement('label');
-      label.textContent = `${coin} prune`;
-      const sel = document.createElement('select');
-      sel.id = `prune-${n.key}`;
-      label.htmlFor = sel.id;
-      const cur = picked[n.key] || n.prune_set_mib;
-      for (const mib of n.prune_options) {
-        const o = document.createElement('option');
-        o.value = String(mib);
-        o.textContent = `${int(mib)} MiB${mib === n.prune_set_mib ? ' (now)' : ''}`;
-        o.selected = mib === cur;
-        sel.append(o);
+  const cards = [];
+  for (const n of st.nodes || []) {
+    const card = el('section', 'node');
+    card.append(el('h2', '', n.name));
+    card.append(el('p', 'state' + (n.state === 'down' ? ' bad' : ''), state(n)));
+    const rows = [];
+    if (n.mem_bytes) rows.push(['memory', bytes(n.mem_bytes)]);
+    if (n.state === 'synced' || n.state === 'syncing') {
+      rows.push(['height', `${int(n.blocks)} / ${int(n.headers)}`]);
+      rows.push(['last block', n.tip_time ? ago(st.now - n.tip_time) : '-']);
+      rows.push(['peers', n.peers === undefined ? '-' : int(n.peers)]);
+      rows.push(['mempool', n.mempool_tx === undefined ? '-' : `${int(n.mempool_tx)} tx (${bytes(n.mempool_bytes)})`]);
+      rows.push(['difficulty', si(n.difficulty)]);
+      rows.push(['disk', `${n.size_on_disk ? bytes(n.size_on_disk) : '-'}${n.pruned ? ' (pruned)' : ''}`]);
+      if (n.prune_set_mib || n.prune_running_mib) {
+        const pend = n.prune_set_mib && n.prune_running_mib && n.prune_set_mib !== n.prune_running_mib ? ` (${int(n.prune_set_mib)} on restart)` : '';
+        rows.push(['prune', `${int(n.prune_running_mib || n.prune_set_mib)} MiB${pend}`]);
       }
-      sel.disabled = busy;
-      sel.addEventListener('change', () => { picked[n.key] = Number(sel.value); });
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.disabled = busy;
-      b.textContent = 'apply (restarts node)';
-      b.addEventListener('click', () => setPrune(n, Number(sel.value)));
-      row.append(label, sel, b);
-      rows.push(row);
+      if (n.dbcache_mib) rows.push(['cache', `${int(n.dbcache_mib)} MiB`]);
+      if (n.chain && n.chain !== 'main') rows.push(['chain', n.chain]);
+      rows.push(['version', n.version || '-']);
     }
-    if (n.dbcache_options && n.dbcache_options.length) {
-      rows.push(choice(n, coin, 'cache', n.dbcache_options, n.dbcache_mib, setCache));
-    }
+    const dl = el('dl');
+    for (const [k, v] of rows) dl.append(el('dt', '', k), el('dd', '', v));
+    card.append(dl);
+    card.append(settings(n));
+    cards.push(card);
   }
-  box.replaceChildren(...rows);
+  box.replaceChildren(...cards);
+  const mem = (st.nodes || []).reduce((a, n) => a + (n.mem_bytes || 0), 0);
+  document.getElementById('mem').textContent = mem
+    ? `Memory, all nodes: ${bytes(mem)}${st.host_mem_total ? ` of ${bytes(st.host_mem_total)} on this machine (${bytes(st.host_mem_available)} available)` : ''}`
+    : '';
+  document.getElementById('checked').textContent = `checked ${ago(st.now - Math.min(...(st.nodes || []).map((n) => n.checked || st.now)))}`;
 }
 
-const pickedCache = {}; // cache size chosen in a menu but not applied yet, by node key
-// choice builds one "<coin> <what> [menu] [apply]" row.
-function choice(n, coin, what, options, now, apply) {
-  const row = document.createElement('span');
-  row.className = 'prune';
-  const label = document.createElement('label');
-  label.textContent = `${coin} ${what}`;
+// The settings at the bottom of a node's card: its prune target and cache
+// (each applied by restarting that node) and, for Dogecoin and Pepecoin,
+// pausing the sync so the Litecoin node gets the bandwidth while it syncs.
+let busy = false;
+const picked = { prune: {}, cache: {} }; // chosen in a menu but not applied yet
+function settings(n) {
+  const box = el('div', 'settings');
+  if (n.prune_options && n.prune_options.length) box.append(choice(n, 'prune', n.prune_options, n.prune_set_mib, setPrune));
+  if (n.dbcache_options && n.dbcache_options.length) box.append(choice(n, 'cache', n.dbcache_options, n.dbcache_mib, setCache));
+  if (n.pausable) {
+    const coin = n.name.replace(' Node', '');
+    const b = el('button', 'pause', n.paused ? `Resume ${coin} sync` : `Pause ${coin} sync`);
+    b.type = 'button';
+    b.disabled = busy;
+    b.addEventListener('click', () => setPaused(n, !n.paused));
+    box.append(b);
+  }
+  return box;
+}
+
+// choice builds one "<what> [menu] [Apply]" row.
+function choice(n, what, options, now, apply) {
+  const row = el('div', 'row');
+  const label = el('label', '', what);
   const sel = document.createElement('select');
   sel.id = `${what}-${n.key}`;
   label.htmlFor = sel.id;
-  const cur = pickedCache[n.key] || now;
+  const cur = picked[what][n.key] || now;
   for (const mib of options) {
-    const o = document.createElement('option');
+    const o = el('option', '', `${int(mib)} MiB${mib === now ? ' (now)' : ''}`);
     o.value = String(mib);
-    o.textContent = `${int(mib)} MiB${mib === now ? ' (now)' : ''}`;
     o.selected = mib === cur;
     sel.append(o);
   }
   sel.disabled = busy;
-  sel.addEventListener('change', () => { pickedCache[n.key] = Number(sel.value); });
-  const b = document.createElement('button');
+  sel.addEventListener('change', () => { picked[what][n.key] = Number(sel.value); });
+  const b = el('button', '', 'Apply');
   b.type = 'button';
+  b.title = 'restarts this node';
   b.disabled = busy;
-  b.textContent = 'apply (restarts node)';
   b.addEventListener('click', () => apply(n, Number(sel.value)));
   row.append(label, sel, b);
   return row;
@@ -168,7 +146,7 @@ async function setCache(n, mib) {
   msg.textContent = `setting ${n.name} cache to ${int(mib)} MiB…`;
   try {
     await post(`api/nodes/${encodeURIComponent(n.key)}/cache`, { mib });
-    delete pickedCache[n.key];
+    delete picked.cache[n.key];
     msg.textContent = `${n.name} cache set to ${int(mib)} MiB; the node is restarting to apply it (a minute or two). Set it back once synced to free the memory.`;
   } catch (e) {
     msg.textContent = `could not set the cache size: ${e.message}`;
@@ -197,7 +175,7 @@ async function setPrune(n, mib) {
   msg.textContent = `setting ${n.name} prune target to ${int(mib)} MiB…`;
   try {
     const j = await post(`api/nodes/${encodeURIComponent(n.key)}/prune`, { mib });
-    delete picked[n.key];
+    delete picked.prune[n.key];
     msg.textContent = j.restarting
       ? `${n.name} prune target set to ${int(mib)} MiB; the node is restarting to apply it (a minute or two).`
       : `${n.name} prune target saved (${int(mib)} MiB). ${j.warning || ''}`;
@@ -232,9 +210,58 @@ async function refresh() {
     if (!r.ok) throw new Error(r.status);
     render(await r.json());
   } catch (e) {
-    document.getElementById('out').textContent = 'Litecoin + Dogecoin Node\n\nstatus page not reachable';
+    document.getElementById('checked').textContent = 'status page not reachable';
   }
 }
+
+
+// ---------- binary rain: evenly spaced columns, alternating up/down (as on the mining pages) ----------
+(() => {
+  const cv = document.getElementById('rain'), ctx = cv.getContext('2d');
+  const STEP = 1000 / 30, FONT = 14, LINE = 16, GAP = 22;
+  let cols = [], raf = 0, last = 0, w = 0, h = 0;
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function resize() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    w = window.innerWidth; h = window.innerHeight;
+    cv.width = w * dpr; cv.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const n = Math.ceil(w / GAP), rows = Math.ceil(h / LINE) + 2;
+    cols = Array.from({ length: n }, (_, i) => ({
+      x: Math.round(i * GAP + GAP / 2), dir: i % 2 === 0 ? -1 : 1, speed: 18 + ((i * 37) % 23),
+      off: Math.random() * LINE, bits: Array.from({ length: rows }, () => (Math.random() < 0.5 ? '0' : '1')),
+    }));
+    draw(0);
+  }
+  function draw(dt) {
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = 'rgba(190, 190, 190, 0.10)';
+    ctx.font = `${FONT}px ui-monospace, Menlo, Consolas, monospace`;
+    ctx.textAlign = 'center';
+    for (const c of cols) {
+      c.off += c.speed * dt;
+      while (c.off >= LINE) {
+        c.off -= LINE;
+        if (c.dir < 0) { c.bits.shift(); c.bits.push(Math.random() < 0.5 ? '0' : '1'); } else { c.bits.pop(); c.bits.unshift(Math.random() < 0.5 ? '0' : '1'); }
+      }
+      const shift = c.dir < 0 ? -c.off : c.off - LINE;
+      for (let r = 0; r < c.bits.length; r++) ctx.fillText(c.bits[r], c.x, r * LINE + shift + FONT);
+    }
+  }
+  function frame(ts) {
+    raf = requestAnimationFrame(frame);
+    if (ts - last < STEP) return;
+    const dt = last ? Math.min(0.1, (ts - last) / 1000) : 0;
+    last = ts;
+    draw(dt);
+  }
+  const start = () => { if (!raf && !still) { last = 0; raf = requestAnimationFrame(frame); } };
+  const stop = () => { cancelAnimationFrame(raf); raf = 0; };
+  window.addEventListener('resize', resize);
+  document.addEventListener('visibilitychange', () => (document.hidden ? stop() : start()));
+  resize();
+  if (!document.hidden) start();
+})();
 
 refresh();
 setInterval(() => { if (!document.hidden) refresh(); }, 5000);

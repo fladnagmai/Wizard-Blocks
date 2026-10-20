@@ -20,14 +20,14 @@ const cfg = JSON.parse(process.argv[2]);
       await page.screenshot({ path: file, fullPage: true });
       const banner = await page.evaluate(() => { const b = document.getElementById('banner'); return b.offsetParent === null ? '' : b.textContent; });
       const shown = await page.evaluate(() => Object.fromEntries(['chains', 'banner', 's-aux-doge', 's-aux-pep', 'diff'].map((id) => [id, !!document.getElementById(id) && document.getElementById(id).offsetParent !== null])));
-      const oddsTxt = await page.evaluate(() => ['p-odds', 'cp-odds', 'ca-doge-odds', 'ca-pep-odds'].map((id) => (document.getElementById(id) || {}).textContent || '').join(' '));
-      if (/%/.test(oddsTxt) || !/^(—|1:[\d,.E]+)( \/ (—|1:[\d,.E]+))*\s*/.test(oddsTxt.trim())) errors.push('block odds not shown as 1:N: ' + oddsTxt);
-      // Per-coin accent, TEST note only for the test build, every settings control present.
+      const oddsTxt = await page.evaluate(() => ['p', 'cp', 'ca-doge', 'ca-pep'].flatMap((p) => [p + '-odds-day', p + '-odds-week']).map((id) => document.getElementById(id)).filter(Boolean).map((e) => e.textContent));
+      // One value per row (per day, per week), each 1:N or — before there is a hashrate.
+      if (oddsTxt.length < 4 || oddsTxt.some((x) => !/^(—|1:[\d,.E]+)$/.test(x))) errors.push('block chance not 1:N per day and per week: ' + JSON.stringify(oddsTxt));
+      // Per-coin accent, no TEST note anywhere, every settings control present.
       const color = await page.evaluate(() => getComputedStyle(document.body).color);
-      const wantColor = { btc: 'rgb(247, 147, 26)', bch: 'rgb(10, 193, 142)', ltc: 'rgb(143, 180, 255)' }[name.split('-')[0]];
+      const wantColor = { btc: 'rgb(247, 147, 26)', bch: 'rgb(10, 193, 142)', ltc: 'rgb(255, 105, 180)' }[name.split('-')[0]];
       if (color !== wantColor) errors.push('accent colour ' + color + ', want ' + wantColor);
-      const note = await page.evaluate(() => document.getElementById('testnote').offsetParent !== null);
-      if (note !== name.startsWith('ltc')) errors.push('TEST note shown=' + note);
+      if (await page.evaluate(() => /\bTEST\b/.test(document.body.innerText))) errors.push('the page says TEST');
       const title = await page.evaluate(() => document.getElementById('title').textContent);
       if (title !== 'WIZARD-BLOCKS-' + name.split('-')[0].toUpperCase() + (name.startsWith('ltc') ? ' + DOGE' : '') + (name.includes('pep') ? ' + PEP' : '')) errors.push('title ' + title);
       const ctl = await page.evaluate(() => ['d-mode', 'd-start', 'd-min', 'd-max', 'd-target', 'd-fixed', 'd-over', 'd-pw', 'd-sg', 'd-save', 'd-reset',
@@ -38,6 +38,11 @@ const cfg = JSON.parse(process.argv[2]);
       const sfile = `${cfg.out}/${name}-settings-${vname}.png`;
       await page.locator('#settings').screenshot({ path: sfile });
       await page.locator('#diff').screenshot({ path: `${cfg.out}/${name}-difficulty-${vname}.png` });
+      // Network difficulty in node units, as the nodes show it (the test
+      // template is LTC 52M, DOGE 21M, PEP 3M node units; BTC/BCH 126T).
+      const nd = await page.evaluate(() => ['p-netdiff', 'cp-diff', 'ca-doge-diff', 'ca-pep-diff'].map((id) => (document.getElementById(id) || {}).textContent || ''));
+      const wantNd = name.startsWith('ltc') ? ['52.00M', '52.00M', '21.00M', name.includes('pep') ? '3.00M' : ''] : ['126.0T', '', '', ''];
+      if (JSON.stringify(nd.map((x, i) => (wantNd[i] ? x : ''))) !== JSON.stringify(wantNd)) errors.push('network difficulty ' + JSON.stringify(nd));
       const wantAux = name.startsWith('ltc'), wantPep = name.includes('pep');
       const wantBanner = name.startsWith('ltc') && name !== 'ltc-doge-merged' && name !== 'ltc-doge-pep-merged';
       if (shown.chains !== wantAux || shown['s-aux-doge'] !== wantAux || shown['s-aux-pep'] !== wantPep || shown.banner !== wantBanner || !shown.diff) {
