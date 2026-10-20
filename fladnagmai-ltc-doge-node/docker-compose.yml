@@ -133,7 +133,7 @@ services:
   web:
     # The app page: every node's live status (nodes/status/Dockerfile,
     # cmd/nodestatus, standard library only).
-    image: ghcr.io/fladnagmai/node-status:0.0.1-beta
+    image: ghcr.io/fladnagmai/node-status:1.0.0-beta
     user: "1000:1000"
     restart: on-failure
     healthcheck:

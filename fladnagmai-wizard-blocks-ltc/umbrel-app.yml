@@ -2,7 +2,7 @@ manifestVersion: 1
 id: fladnagmai-wizard-blocks-ltc
 category: crypto
 name: Wizard-Blocks³
-version: "0.0.1-beta"
+version: "1.0.0-beta"
 tagline: Solo-mine Litecoin and merge-mine Dogecoin and Pepecoin on your own nodes
 icon: https://raw.githubusercontent.com/fladnagmai/Wizard-Blocks/main/fladnagmai-wizard-blocks-ltc/icon.svg
 description: >-
