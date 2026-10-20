@@ -39,11 +39,31 @@ network. Unit tests cover it (`TestDogeMergedMiningOffWhileNoPeers`,
       ("merged mining: yes") within a minute, the miner gets a clean job
       with the merged-mining tag, and DOGE shares count again.
 
+## Pepecoin merged mining (third chain)
+Pepecoin's testnet uses the same address version bytes as Dogecoin's
+testnet ("n…"), so check which node made each address.
+- [ ] The node app page shows the Pepecoin node synced on testnet, its
+      memory use, and the memory total of all three nodes.
+- [ ] Before a PEP address is set, the LTC page shows "Pepecoin is not
+      merged: add a PEP payout address"; LTC and DOGE are mined.
+- [ ] Save a PEP testnet address (from the Pepecoin node:
+      `sudo docker exec fladnagmai-ltc-doge-node_pepecoind_1 sh -c 'pepecoin-cli -testnet -rpcport=44873 -rpcuser=$RPC_USER -rpcpassword=$RPC_PASS getnewaddress'`);
+      the PEP panel shows "merged" and the title reads LTC + DOGE + PEP.
+- [ ] PEP blocks found are accepted by the Pepecoin node and pay the PEP
+      address.
+- [ ] Pause the Pepecoin sync on the node app page: the LTC page says
+      Pepecoin is not merged (no peers), LTC and DOGE carry on; resume: PEP
+      is merged again within a minute.
+- [ ] Stop the Pepecoin container
+      (`sudo docker stop fladnagmai-ltc-doge-node_pepecoind_1`): "node down",
+      LTC and DOGE carry on; start it again: PEP merged again.
+
 ## Pruning
 - [ ] Change the Litecoin prune target on the node app page: only the
       Litecoin node restarts, the LTC page shows the node reconnecting, then
       mining continues without manual action.
-- [ ] Same for Dogecoin (merged mining off while it restarts, back after).
+- [ ] Same for Dogecoin and Pepecoin (that chain's merged mining is off while
+      it restarts, back after).
 
 ## Restarts
 - [ ] Restart the LTC app: payouts, blocks and settings are kept.
