@@ -1,0 +1,9 @@
+/* Tabs above the pool page (public view only), in the page's own colours. */
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tabs a { color: var(--g); border: 1px solid var(--dim); padding: 6px 14px; text-decoration: none; letter-spacing: 2px; }
+.tabs a:hover { border-color: var(--g); background: var(--hov); }
+.tabs a[aria-current="page"] { border-color: var(--g); background: var(--hov); }
+.tabs a.home { border-color: transparent; color: var(--dim); padding-left: 0; }
+/* Settings are left out here, so two columns. */
+.grid { grid-template-columns: 1fr 1.3fr; }
+@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }

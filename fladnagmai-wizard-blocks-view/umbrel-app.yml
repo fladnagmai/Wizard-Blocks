@@ -1,0 +1,37 @@
+manifestVersion: 1
+id: fladnagmai-wizard-blocks-view
+category: crypto
+name: Wizard-Blocks View
+version: "1.0.0-beta"
+tagline: A public, view-only page for your Wizard-Blocks pools
+icon: https://raw.githubusercontent.com/fladnagmai/Wizard-Blocks/main/fladnagmai-wizard-blocks-view/icon.svg
+description: >-
+  A public website for your Wizard-Blocks pools, on its own port (8431) so
+  you can open it from anywhere without a VPN once you forward that port on
+  your router.
+
+
+  The front page is the wizard falling into a portal: click him to see the
+  BCH pool, with tabs for the LTC and BTC pools. The pool pages are view-only
+  copies of the apps' pages: hashrate, workers, shares, block chances and
+  found blocks. There are no settings, no logins and no way to change
+  anything, and payout addresses are never shown (a worker named after an
+  address is shortened).
+
+
+  It only reads the pool apps that are installed; a pool that is not running
+  says so on its tab.
+releaseNotes: >-
+  Beta.
+developer: fladnagmai
+website: https://github.com/fladnagmai/Wizard-Blocks
+dependencies: []
+repo: https://github.com/fladnagmai/Wizard-Blocks
+support: https://github.com/fladnagmai/Wizard-Blocks/issues
+port: 8432
+gallery: []
+path: ""
+defaultUsername: ""
+defaultPassword: ""
+submitter: fladnagmai
+submission: https://github.com/fladnagmai/Wizard-Blocks
