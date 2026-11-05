@@ -404,7 +404,14 @@ const rain = (() => {
 })();
 
 // ---------- go ----------
+// The public view (Wizard-Blocks View, view.js sets WB_VIEW) shows stats
+// only: no Settings, no Difficulty, no admin requests.
+if (window.WB_VIEW) {
+  $('settings').hidden = true;
+  $('diff').hidden = true;
+} else {
+  syncSession();
+}
 refresh();
-syncSession();
 setInterval(() => { if (!document.hidden) refresh(); }, 5000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });

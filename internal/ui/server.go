@@ -673,3 +673,11 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
+
+// SimpleFiles is the one-page stats UI (simple/), for the public view-only
+// pages (cmd/poolview) that show the same page without its settings.
+func SimpleFiles() fs.FS { sub, _ := fs.Sub(simpleFS, "simple"); return sub }
+
+// StaticFiles is the Mine/Ledger UI (static/); the view-only portal page
+// draws the wizard from its sprites.
+func StaticFiles() fs.FS { sub, _ := fs.Sub(staticFS, "static"); return sub }

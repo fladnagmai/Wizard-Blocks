@@ -1,0 +1,14 @@
+html, body { margin: 0; height: 100%; background: #000; color: #b78cff; overflow: hidden; }
+body { font: bold 14px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; }
+#scene { position: fixed; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; cursor: default; }
+#scene.over { cursor: pointer; }
+header { position: fixed; top: 0; left: 0; right: 0; text-align: center; padding-top: max(28px, env(safe-area-inset-top)); pointer-events: none; }
+h1 { margin: 0; font-size: clamp(22px, 5vw, 44px); letter-spacing: 4px; color: #e9dcff; text-shadow: 0 0 12px #7b3fe4, 0 0 2px #fff; }
+#hint { margin: 8px 0 0; color: #8a6fc4; letter-spacing: 2px; animation: pulse 2.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.35; } }
+/* Keyboard and screen-reader way in; invisible until focused. */
+#enter { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); color: #e9dcff; opacity: 0; padding: 6px 12px; border: 1px solid #7b3fe4; text-decoration: none; }
+#enter:focus { opacity: 1; outline: none; }
+.noscript { position: fixed; inset: 45% 0 auto; text-align: center; }
+.noscript a { color: #e9dcff; }
+@media (prefers-reduced-motion: reduce) { #hint { animation: none; } }
