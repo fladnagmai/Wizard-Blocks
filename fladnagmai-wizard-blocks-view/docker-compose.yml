@@ -10,7 +10,7 @@ services:
   web:
     # The public view (cmd/poolview, view/Dockerfile): reads each pool app's
     # state and serves it view-only, without payout addresses or settings.
-    image: ghcr.io/fladnagmai/wizard-blocks-view:1.0.0-beta
+    image: ghcr.io/fladnagmai/wizard-blocks-view:1.0.0-beta@sha256:c62a401a931de34823a5a7a94ad3e0fdfb7321f0ff0a505769aade00cfe86fb8
     user: "1000:1000"
     restart: on-failure
     read_only: true
