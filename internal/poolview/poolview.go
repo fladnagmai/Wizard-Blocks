@@ -16,6 +16,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"path"
 	"regexp"
 	"strings"
@@ -74,6 +75,7 @@ func (s *Server) pool(key string) *Pool {
 //	/pools.json           the pools shown, for the tabs
 //	/<pool>/              that pool's stats page, view only
 //	/<pool>/api/state     its state, without payout addresses
+//	/<pool>/api/worker    a worker's hashrate graph data (not for address names)
 //
 // Only GET and HEAD; everything else is 404 or 405.
 func (s *Server) Handler() http.Handler {
@@ -134,6 +136,8 @@ func (s *Server) Handler() http.Handler {
 			serveFile(w, r, s.simple, rest)
 		case "api/state":
 			s.serveState(w, r, pl)
+		case "api/worker":
+			s.serveWorker(w, r, pl)
 		default:
 			http.NotFound(w, r)
 		}
@@ -161,6 +165,36 @@ func (s *Server) servePage(w http.ResponseWriter, r *http.Request) {
 		`<link rel="stylesheet" href="style.css">`+"\n"+`<link rel="stylesheet" href="/view.css">`+"\n"+`<script src="/view.js"></script>`, 1)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	io.WriteString(w, page)
+}
+
+// serveWorker passes on a worker's graph data. Workers named after an
+// address are shown shortened, so their graphs are not offered.
+func (s *Server) serveWorker(w http.ResponseWriter, r *http.Request, pl *Pool) {
+	name := r.URL.Query().Get("name")
+	if name == "" || len(name) > 256 || maskName(name) != name {
+		http.NotFound(w, r)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(pl.URL, "/")+"/api/worker?name="+url.QueryEscape(name), nil)
+	res, err := s.client.Do(req)
+	if err != nil {
+		http.Error(w, pl.Label+" pool not answering", http.StatusBadGateway)
+		return
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		http.NotFound(w, r)
+		return
+	}
+	var v any
+	if err := json.NewDecoder(io.LimitReader(res.Body, 4<<20)).Decode(&v); err != nil {
+		http.Error(w, pl.Label+" pool sent bad data", http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(Sanitize(v))
 }
 
 // serveState answers with the engine's state minus payout addresses, cached

@@ -187,14 +187,15 @@ function render(st) {
   if (document.activeElement !== $('s-addr') && !$('s-addr').dataset.dirty) $('s-addr').value = sx.payout_address || '';
 
   const workers = (st.workers || []).slice().sort((a, b) => (b.hashrate_live || 0) - (a.hashrate_live || 0));
-  $('workers').innerHTML = workers.length ? workers.map((w) => `<tr>
-    <td>${esc(w.name)}${w.connections > 0 ? '' : ' <span class="dim">(offline)</span>'}</td>
+  $('workers').innerHTML = workers.length ? workers.map((w) => `<tr class="wrow${w.name === graph.name ? ' open' : ''}" data-name="${esc(w.name)}" tabindex="0" title="Click for this worker's hashrate graph">
+    <td>${graph.name === w.name ? '▾' : '▸'} ${esc(w.name)}${w.connections > 0 ? '' : ' <span class="dim">(offline)</span>'}</td>
     <td class="num">${esc(fmtHash(w.hashrate_live))}</td>
     <td class="num">${esc(fmtDiff(w.difficulty))}</td>
     <td class="num">${esc(fmtInt(w.shares_accepted))} / ${esc(fmtInt(w.shares_rejected))}</td>
     <td class="num">${esc(fmtInt(w.shares_stale))}</td>
     <td class="num">${esc(fmtDiff(w.best_share_difficulty))}</td>
     <td class="num">${esc(ago(w.last_share_at))}</td></tr>`).join('') : '<tr><td colspan="7" class="dim">No miners yet.</td></tr>';
+  placeGraph();
 
   // Real blocks only (newest first): candidates that never made the chain
   // (stale, rejected) are left out.
@@ -217,6 +218,170 @@ function render(st) {
   }).join('') : `<tr><td colspan="${cols}" class="dim">No blocks found yet.</td></tr>`;
   updateCalc();
 }
+
+// ---------- worker graph: click a worker for its hashrate over time ----------
+// Ranges and smoothing: "raw" is the 10-second buckets (last hour only);
+// the others are trailing averages of the per-minute history (last week).
+const RANGES = { '1h': 60, '6h': 360, '24h': 1440, '7d': 10080 }; // minutes
+const SMOOTH = { raw: 0, '1m': 1, '15m': 15, '1h': 60, '1d': 1440 }; // minutes
+const graph = { name: '', range: '1h', smooth: '15m', data: null, at: 0, hover: -1, pts: [] };
+const graphRow = document.createElement('tr');
+graphRow.className = 'wgraph';
+graphRow.innerHTML = `<td colspan="7"><div class="gctl">
+  <span class="glabel" id="g-title"></span>
+  <span class="gbtns" id="g-range" role="group" aria-label="Time range">${Object.keys(RANGES).map((k) => `<button type="button" data-v="${k}">${k}</button>`).join('')}</span>
+  <span class="gbtns" id="g-smooth" role="group" aria-label="Averaging">${Object.keys(SMOOTH).map((k) => `<button type="button" data-v="${k}">${k === 'raw' ? 'raw' : k + ' avg'}</button>`).join('')}</span>
+  </div><div class="gwrap"><canvas id="g-canvas" height="240"></canvas><div class="gtip" id="g-tip" hidden></div></div>
+  <p class="dim small" id="g-note"></p></td>`;
+
+function placeGraph() {
+  const row = graph.name && [...$('workers').querySelectorAll('tr.wrow')].find((r) => r.dataset.name === graph.name);
+  if (!row) { graphRow.remove(); return; }
+  row.after(graphRow);
+  syncGraphButtons();
+  drawGraph();
+}
+function syncGraphButtons() {
+  graphRow.querySelectorAll('#g-range button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === graph.range)));
+  graphRow.querySelectorAll('#g-smooth button').forEach((b) => {
+    b.setAttribute('aria-pressed', String(b.dataset.v === graph.smooth));
+    b.disabled = b.dataset.v === 'raw' && graph.range !== '1h'; // raw: last hour only
+  });
+}
+async function loadGraph() {
+  const name = graph.name;
+  if (!name) return;
+  try {
+    const r = await fetch('api/worker?name=' + encodeURIComponent(name), { cache: 'no-store' });
+    if (!r.ok) throw new Error(r.status === 404 ? 'no history for this worker yet' : 'HTTP ' + r.status);
+    const d = await r.json();
+    if (graph.name === name) { graph.data = d; graph.at = Date.now(); drawGraph(); }
+  } catch (e) {
+    if (graph.name === name) { graph.data = null; set('g-note', 'Graph unavailable: ' + e.message, true); drawGraph(); }
+  }
+}
+function openGraph(name) {
+  graph.name = graph.name === name ? '' : name;
+  graph.data = null; graph.hover = -1;
+  if (lastState) render(lastState);
+  if (graph.name) loadGraph();
+}
+$('workers').addEventListener('click', (e) => {
+  const row = e.target.closest('tr.wrow');
+  if (row) openGraph(row.dataset.name);
+});
+$('workers').addEventListener('keydown', (e) => {
+  const row = e.target.closest('tr.wrow');
+  if (row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openGraph(row.dataset.name); }
+});
+graphRow.addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b || b.disabled) return;
+  if (b.parentElement.id === 'g-range') {
+    graph.range = b.dataset.v;
+    if (graph.smooth === 'raw' && graph.range !== '1h') graph.smooth = '1m';
+  } else if (b.parentElement.id === 'g-smooth') graph.smooth = b.dataset.v;
+  graph.hover = -1;
+  syncGraphButtons();
+  drawGraph();
+});
+// points: [unix seconds, H/s] for the chosen range and smoothing.
+function graphPoints() {
+  const d = graph.data;
+  if (!d) return [];
+  const d1 = d.diff1_hashes;
+  if (graph.smooth === 'raw') {
+    const n = d.raw.length;
+    return d.raw.map((v, i) => [d.raw_end - (n - 1 - i) * d.raw_step_s, v * d1 / d.raw_step_s]);
+  }
+  const win = SMOOTH[graph.smooth], span = RANGES[graph.range], m = d.minutes, n = m.length;
+  // Downsample long ranges to at most ~720 points (each point still the
+  // trailing average over the chosen window).
+  const step = Math.max(1, Math.floor(span / 720));
+  const pre = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) pre[i + 1] = pre[i] + m[i];
+  const pts = [];
+  // Aligned so the newest minute is always the last point.
+  for (let i = n - 1 - Math.floor((span - 1) / step) * step; i < n; i += step) {
+    if (i < 0) continue;
+    const lo = Math.max(0, i - win + 1), mins = i - lo + 1;
+    pts.push([d.minute_end - (n - 1 - i) * 60, (pre[i + 1] - pre[lo]) * d1 / (mins * 60)]);
+  }
+  return pts;
+}
+function drawGraph() {
+  const cv = document.getElementById('g-canvas');
+  if (!cv || !graphRow.isConnected) return;
+  const cs = getComputedStyle(document.documentElement);
+  const fg = cs.getPropertyValue('--g').trim() || '#0f0', dim = cs.getPropertyValue('--dim').trim() || '#080', line = cs.getPropertyValue('--line').trim() || '#030';
+  const dpr = Math.min(2, window.devicePixelRatio || 1), W = cv.clientWidth || 600, H = 240;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const g = cv.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, W, H);
+  g.font = '12px ui-monospace, Menlo, Consolas, monospace';
+  $('g-title').textContent = graph.name;
+  const pts = graphPoints();
+  graph.pts = pts;
+  const avg = pts.length ? pts.reduce((a, p) => a + p[1], 0) / pts.length : 0;
+  if (graph.data) set('g-note', `${graph.smooth === 'raw' ? 'Raw 10-second readings' : (graph.smooth === '1m' ? 'Per minute' : graph.smooth + ' rolling average')} · last ${graph.range} · average ${fmtHash(avg)} · updates every 30 s`);
+  if (!pts.length) {
+    g.fillStyle = dim; g.fillText(graph.data ? 'no shares in this range' : 'loading…', 12, H / 2);
+    return;
+  }
+  const L = 74, R = 10, T = 10, B = 24, pw = W - L - R, ph = H - T - B;
+  const t0 = pts[0][0], t1 = pts[pts.length - 1][0] || t0 + 1;
+  let ymax = Math.max(...pts.map((p) => p[1])) * 1.1 || 1;
+  const X = (t) => L + (t - t0) / Math.max(1, t1 - t0) * pw, Y = (v) => T + ph - v / ymax * ph;
+  // Grid and axes.
+  g.strokeStyle = line; g.fillStyle = dim; g.lineWidth = 1;
+  g.textAlign = 'right'; g.textBaseline = 'middle';
+  for (let k = 0; k <= 4; k++) {
+    const v = ymax * k / 4, y = Math.round(Y(v)) + 0.5;
+    g.beginPath(); g.moveTo(L, y); g.lineTo(W - R, y); g.stroke();
+    g.fillText(fmtHash(v), L - 6, y);
+  }
+  g.textAlign = 'center'; g.textBaseline = 'top';
+  const span = t1 - t0;
+  for (let k = 0; k <= 4; k++) {
+    const t = t0 + span * k / 4, d = new Date(t * 1000);
+    const lbl = span > 2 * 86400 ? d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit' }) : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    g.fillText(lbl, Math.min(Math.max(X(t), L + 30), W - R - 30), H - B + 6);
+  }
+  // The series.
+  g.strokeStyle = fg; g.lineWidth = 2; g.lineJoin = 'round';
+  g.beginPath();
+  pts.forEach((p, i) => (i ? g.lineTo(X(p[0]), Y(p[1])) : g.moveTo(X(p[0]), Y(p[1]))));
+  g.stroke();
+  // Hover: crosshair, point and value.
+  const tip = $('g-tip');
+  if (graph.hover >= 0 && graph.hover < pts.length) {
+    const p = pts[graph.hover], x = X(p[0]), y = Y(p[1]);
+    g.strokeStyle = dim; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(Math.round(x) + 0.5, T); g.lineTo(Math.round(x) + 0.5, T + ph); g.stroke();
+    g.fillStyle = '#000'; g.strokeStyle = fg; g.lineWidth = 2;
+    g.beginPath(); g.arc(x, y, 4, 0, Math.PI * 2); g.fill(); g.stroke();
+    tip.hidden = false;
+    tip.textContent = `${fmtHash(p[1])} · ${new Date(p[0] * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
+    tip.style.left = Math.min(Math.max(x - tip.offsetWidth / 2, 0), W - tip.offsetWidth) + 'px';
+  } else tip.hidden = true;
+}
+const graphHover = (e) => {
+  const cv = document.getElementById('g-canvas');
+  if (e.target !== cv || !graph.pts.length) return;
+  const r = cv.getBoundingClientRect(), x = e.clientX - r.left, L = 74, pw = r.width - L - 10;
+  const t0 = graph.pts[0][0], t1 = graph.pts[graph.pts.length - 1][0];
+  const t = t0 + (x - L) / pw * (t1 - t0);
+  let best = 0;
+  graph.pts.forEach((p, i) => { if (Math.abs(p[0] - t) < Math.abs(graph.pts[best][0] - t)) best = i; });
+  graph.hover = best;
+  drawGraph();
+};
+graphRow.addEventListener('pointermove', graphHover);
+graphRow.addEventListener('pointerdown', graphHover); // a tap on a phone
+graphRow.addEventListener('pointerleave', () => { graph.hover = -1; drawGraph(); });
+window.addEventListener('resize', drawGraph);
+setInterval(() => { if (graph.name && !document.hidden && Date.now() - graph.at > 30000) loadGraph(); }, 5000);
 
 // ---------- settings: payout address and optional password ----------
 async function api(path, method, body) {

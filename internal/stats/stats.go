@@ -207,9 +207,10 @@ type Collector struct {
 	connections int
 	persistPath string
 	luck        Luck
-	recent      []RecentShare // latest accepted shares, oldest first
-	round       Round         // shares on the current block template (prevhash)
-	rounds      []Round       // completed rounds, oldest first
+	recent      []RecentShare          // latest accepted shares, oldest first
+	round       Round                  // shares on the current block template (prevhash)
+	rounds      []Round                // completed rounds, oldest first
+	whist       map[string]*minuteHist // per-worker minute history (workerhist.go)
 }
 
 // Round aggregates shares mined on one previous-block hash ("job" in the
@@ -239,6 +240,7 @@ func New(coin, version, dataDir string) *Collector {
 	if dataDir != "" {
 		c.persistPath = filepath.Join(dataDir, "state-"+coin+".json")
 		c.load()
+		c.loadHist()
 	}
 	return c
 }
@@ -314,7 +316,10 @@ func (c *Collector) Save() error {
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, c.persistPath)
+	if err := os.Rename(tmp, c.persistPath); err != nil {
+		return err
+	}
+	return c.saveHist()
 }
 
 func (c *Collector) worker(name string) *Worker {
@@ -382,6 +387,7 @@ func (c *Collector) ShareAcceptedOn(prevHash, worker string, shareDiff, achieved
 	w.Interps[interp]++
 	w.LastShare = now
 	w.rate.add(now, shareDiff)
+	c.addHistLocked(worker, now, shareDiff)
 	c.pool.add(now, shareDiff)
 	c.accepted++
 	c.recent = append(c.recent, RecentShare{Worker: worker, Difficulty: achieved})

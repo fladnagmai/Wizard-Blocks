@@ -66,3 +66,19 @@ code { color: var(--g); }
 /* Aux chain titles in the chain's own colour. */
 .aux h2 { color: var(--aux); }
 #ca-pep h2 { color: #5fd35f; }
+
+/* Worker rows open a hashrate graph below them. */
+tr.wrow { cursor: pointer; }
+tr.wrow:hover td, tr.wrow.open td { background: var(--hov); }
+tr.wrow:focus-visible { outline: 1px solid var(--g); outline-offset: -1px; }
+tr.wgraph > td { white-space: normal; padding: 10px 0 12px; }
+.gctl { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 8px; }
+.glabel { font-size: 14px; letter-spacing: 1px; margin-right: auto; }
+.gbtns { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.gbtns button { min-height: 30px; padding: 3px 9px; font-size: 12px; }
+.gbtns button[aria-pressed="true"] { background: var(--hov); border-color: var(--g); }
+.gbtns button:disabled { opacity: 0.35; cursor: not-allowed; }
+.gwrap { position: relative; }
+#g-canvas { display: block; width: 100%; height: 240px; }
+.gtip { position: absolute; top: 0; background: #000; border: 1px solid var(--g); padding: 2px 8px; font-size: 12px; white-space: nowrap; pointer-events: none; }
+#g-note { margin: 6px 0 0; }

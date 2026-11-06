@@ -139,6 +139,7 @@ func (s *Server) Listen(addr string) error {
 	mux.HandleFunc("/api/state", s.handleState)
 	mux.HandleFunc("/api/events", s.handleEvents)
 	mux.HandleFunc("/api/history", s.handleHistory)
+	mux.HandleFunc("/api/worker", s.handleWorker)
 	mux.HandleFunc("/api/blocks", s.handleBlocks)
 	s.routesAdmin(mux)
 	// Static files carry the build version as their ETag: browsers revalidate
@@ -634,6 +635,17 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"range": rng, "step_s": step.Seconds(), "points": pts})
+}
+
+// handleWorker answers GET /api/worker?name=<worker> with that worker's
+// hashrate history for its graph (stats.WorkerSeries).
+func (s *Server) handleWorker(w http.ResponseWriter, r *http.Request) {
+	ws, ok := s.st.WorkerHistory(r.URL.Query().Get("name"))
+	if !ok {
+		http.Error(w, "no such worker", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, ws)
 }
 
 const maxSSEClients = 32

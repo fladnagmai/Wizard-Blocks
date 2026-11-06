@@ -35,6 +35,21 @@ const cfg = JSON.parse(process.argv[2]);
       if (ctl.length) errors.push('settings controls missing or hidden: ' + ctl.join(','));
       const lim = await page.evaluate(() => [document.getElementById('s-maxconn').value, document.getElementById('s-maxip').value]);
       if (lim[0] !== '1024' || lim[1] !== '64') errors.push('connection limits ' + JSON.stringify(lim));
+      // A worker opens its hashrate graph; the range and averaging buttons redraw it.
+      await page.click('#workers tr.wrow');
+      await page.waitForFunction(() => /average/.test((document.getElementById('g-note') || {}).textContent || ''), null, { timeout: 5000 });
+      await page.click('#g-range button[data-v="24h"]');
+      await page.click('#g-smooth button[data-v="1h"]');
+      const g = await page.evaluate(() => ({ raw: document.querySelector('#g-smooth button[data-v="raw"]').disabled, note: document.getElementById('g-note').textContent, rows: document.querySelectorAll('tr.wgraph').length }));
+      if (!g.raw || !/1h rolling average · last 24h/.test(g.note) || g.rows !== 1) errors.push('worker graph ' + JSON.stringify(g));
+      const cvb = await page.locator('#g-canvas').boundingBox();
+      await page.locator('#g-canvas').hover({ position: { x: cvb.width - 20, y: 100 } });
+      if (await page.evaluate(() => document.getElementById('g-tip').hidden)) errors.push('graph hover tooltip missing');
+      // The test's shares are in the newest minute: the line must not be flat at zero.
+      if (!/average [1-9]/.test(await page.evaluate(() => document.getElementById('g-note').textContent))) errors.push('worker graph shows no hashrate');
+      await page.locator('tr.wgraph').screenshot({ path: `${cfg.out}/${name}-worker-graph-${vname}.png` });
+      await page.click('#workers tr.wrow'); // closes it again
+      if (await page.evaluate(() => document.querySelectorAll('tr.wgraph').length)) errors.push('worker graph did not close');
       const sfile = `${cfg.out}/${name}-settings-${vname}.png`;
       await page.locator('#settings').screenshot({ path: sfile });
       await page.locator('#diff').screenshot({ path: `${cfg.out}/${name}-difficulty-${vname}.png` });

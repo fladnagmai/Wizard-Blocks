@@ -20,6 +20,10 @@ func fakeEngine(t *testing.T) (*httptest.Server, *int) {
 		if strings.HasPrefix(r.URL.Path, "/api/admin") {
 			admin++
 		}
+		if r.URL.Path == "/api/worker" {
+			io.WriteString(w, `{"name":"`+r.URL.Query().Get("name")+`","minutes":[1,2]}`)
+			return
+		}
 		if r.URL.Path != "/api/state" {
 			http.NotFound(w, r)
 			return
@@ -103,6 +107,13 @@ func TestViewOnly(t *testing.T) {
 		if r.StatusCode != http.StatusMethodNotAllowed {
 			t.Fatalf("%s: %d", m, r.StatusCode)
 		}
+	}
+	// A worker's graph data passes through; an address-named worker's does not.
+	if code, body, _ := get(t, srv.URL+"/bch/api/worker?name=ash"); code != 200 || !strings.Contains(body, `"name":"ash"`) {
+		t.Fatalf("worker graph: %d %s", code, body)
+	}
+	if code, _, _ := get(t, srv.URL+"/bch/api/worker?name=bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a"); code != 404 {
+		t.Fatalf("address worker graph: %d", code)
 	}
 	if *admin != 0 {
 		t.Fatal("an admin request reached the engine")

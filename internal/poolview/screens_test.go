@@ -30,7 +30,9 @@ func TestScreens(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	engine := func(coin string, netDiff float64) string {
 		st := stats.New(coin, "1.0.0-beta", "")
-		st.SetNode(func(n *stats.NodeStatus) { n.Connected, n.Synced, n.Height, n.Headers, n.Chain, n.ZMQEnabled, n.ZMQConnected = true, true, 950123, 950123, "main", true, true })
+		st.SetNode(func(n *stats.NodeStatus) {
+			n.Connected, n.Synced, n.Height, n.Headers, n.Chain, n.ZMQEnabled, n.ZMQConnected = true, true, 950123, 950123, "main", true, true
+		})
 		st.SetTemplate(func(ti *stats.TemplateInfo) { ti.PrevHash = "p"; ti.Height = 950124; ti.NetworkDiff = netDiff })
 		for _, w := range []string{"ash", "bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a"} {
 			st.Connected(w)
