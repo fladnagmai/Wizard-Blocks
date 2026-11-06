@@ -224,19 +224,19 @@ function render(st) {
 // others are trailing averages of the per-minute history (last week). Any
 // number of averages can be shown at once, each in its own neon colour.
 const RANGES = { '1h': 60, '6h': 360, '24h': 1440, '7d': 10080 }; // minutes
-const SMOOTH = { raw: 0, '1m': 1, '15m': 15, '1h': 60, '1d': 1440 }; // minutes
+const SMOOTH = { raw: 0, '1m': 1, '5m': 5, '15m': 15, '30m': 30, '1h': 60, '6h': 360, '12h': 720, '1d': 1440 }; // minutes
 // Plain words, so the time shown and the averaging cannot be confused.
 const RANGE_LABEL = { '1h': 'last hour', '6h': 'last 6 hours', '24h': 'last day', '7d': 'last week' };
-const LINE_LABEL = { raw: 'raw', '1m': '1-min avg', '15m': '15-min avg', '1h': 'hourly avg', '1d': 'daily avg' };
-const NEON = { raw: '#f2f2ff', '1m': '#00e5ff', '15m': '#39ff14', '1h': '#ffea00', '1d': '#ff2bd6' };
+const LINE_LABEL = { raw: 'raw', '1m': '1m', '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1h', '6h': '6h', '12h': '12h', '1d': '1d' };
+const LINE_TITLE = { raw: 'raw 10-second readings', '1m': '1-minute average', '5m': '5-minute average', '15m': '15-minute average', '30m': '30-minute average', '1h': '1-hour average', '6h': '6-hour average', '12h': '12-hour average', '1d': '1-day average' };
+const NEON = { raw: '#f2f2ff', '1m': '#00e5ff', '5m': '#2f6bff', '15m': '#39ff14', '30m': '#ff8c00', '1h': '#ffea00', '6h': '#ff1f3d', '12h': '#a64dff', '1d': '#ff2bd6' };
 const lineName = (k) => LINE_LABEL[k];
 const graph = { name: '', range: '1h', shown: new Set(['15m']), data: null, at: 0, hoverT: null, series: [] };
 const graphRow = document.createElement('tr');
 graphRow.className = 'wgraph';
 graphRow.innerHTML = `<td colspan="7"><div class="gctl">
   <span class="glabel" id="g-title"></span>
-  <span class="gbtns" id="g-range" role="group" aria-label="Time shown"><span class="gname">show</span>${Object.keys(RANGES).map((k) => `<button type="button" data-v="${k}">${RANGE_LABEL[k]}</button>`).join('')}</span>
-  <span class="gbtns" id="g-smooth" role="group" aria-label="Lines"><span class="gname">lines</span>${Object.keys(SMOOTH).map((k) => `<button type="button" data-v="${k}" class="line-${k}">${lineName(k)}</button>`).join('')}</span>
+  <span class="gbar"><select id="g-range" aria-label="Time shown">${Object.keys(RANGES).map((k) => `<option value="${k}">${RANGE_LABEL[k]}</option>`).join('')}</select><span class="gbtns" id="g-smooth" role="group" aria-label="Lines">${Object.keys(SMOOTH).map((k) => `<button type="button" data-v="${k}" class="line-${k}" title="${LINE_TITLE[k]}">${lineName(k)}</button>`).join('')}</span></span>
   </div><div class="gwrap"><canvas id="g-canvas" height="300"></canvas><div class="gtip" id="g-tip" hidden></div></div>
   <p class="dim small" id="g-note"></p></td>`;
 
@@ -248,9 +248,10 @@ function placeGraph() {
   drawGraph();
 }
 function syncGraphButtons() {
-  graphRow.querySelectorAll('#g-range button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === graph.range)));
+  graphRow.querySelector('#g-range').value = graph.range;
   graphRow.querySelectorAll('#g-smooth button').forEach((b) => {
     b.disabled = b.dataset.v === 'raw' && graph.range !== '1h'; // raw: last hour only
+    b.hidden = b.disabled;
     b.setAttribute('aria-pressed', String(graph.shown.has(b.dataset.v) && !b.disabled));
   });
 }
@@ -283,8 +284,7 @@ $('workers').addEventListener('keydown', (e) => {
 graphRow.addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b || b.disabled) return;
-  if (b.parentElement.id === 'g-range') graph.range = b.dataset.v;
-  else if (b.parentElement.id === 'g-smooth') {
+  if (b.parentElement.id === 'g-smooth') {
     if (graph.shown.has(b.dataset.v)) { if (graph.shown.size > 1) graph.shown.delete(b.dataset.v); } else graph.shown.add(b.dataset.v);
   }
   // Keep at least one line that the range can show.
@@ -392,7 +392,7 @@ function drawGraph() {
       g.beginPath(); g.arc(X(p[0]), Y(p[1]), 7, 0, Math.PI * 2); g.fill(); g.stroke();
       const row = document.createElement('div');
       row.style.color = NEON[s.k];
-      row.textContent = `${lineName(s.k)}: ${fmtHash(p[1])}`;
+      row.textContent = `${LINE_TITLE[s.k]}: ${fmtHash(p[1])}`;
       tip.append(row);
     }
     tip.hidden = false;
@@ -409,6 +409,14 @@ const graphHover = (e) => {
   graph.hoverT = t0 + (x - L) / pw * (t1 - t0);
   drawGraph();
 };
+graphRow.addEventListener('change', (e) => {
+  if (e.target.id !== 'g-range') return;
+  graph.range = e.target.value;
+  if (graph.range !== '1h' && [...graph.shown].every((k) => k === 'raw')) graph.shown.add('1m');
+  graph.hoverT = null;
+  syncGraphButtons();
+  drawGraph();
+});
 graphRow.addEventListener('pointermove', graphHover);
 graphRow.addEventListener('pointerdown', graphHover); // a tap on a phone
 graphRow.addEventListener('pointerleave', () => { graph.hoverT = null; drawGraph(); });

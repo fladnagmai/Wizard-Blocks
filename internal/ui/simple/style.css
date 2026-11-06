@@ -72,15 +72,18 @@ tr.wrow { cursor: pointer; }
 tr.wrow:hover td, tr.wrow.open td { background: var(--hov); }
 tr.wrow:focus-visible { outline: 1px solid var(--g); outline-offset: -1px; }
 tr.wgraph > td { white-space: normal; padding: 10px 0 12px; }
-.gctl { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 8px; }
-.glabel { font-size: 16px; letter-spacing: 1px; margin-right: auto; }
+.gctl { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: flex-start; margin-bottom: 8px; }
+/* One bar of buttons in the top right: the time spans, then the lines. */
+.gbar { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px; margin-left: auto; }
+#g-range { min-height: 36px; font-size: 14px; padding: 4px 8px; margin-right: 8px; }
+.glabel { font-size: 16px; letter-spacing: 1px; padding-top: 6px; }
 .gbtns { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
-.gname { color: var(--dim); margin-right: 4px; }
-.gbtns button { min-height: 36px; padding: 4px 12px; font-size: 14px; }
+.gbtns button { min-height: 36px; min-width: 44px; padding: 4px 10px; font-size: 14px; }
 .gbtns button[aria-pressed="true"] { background: var(--hov); border-color: var(--g); }
 /* The line buttons are the legend: each in its line's neon colour when on. */
 #g-smooth button[aria-pressed="true"] { color: var(--c); border-color: var(--c); box-shadow: 0 0 8px var(--c); background: #000; }
-.line-raw { --c: #f2f2ff; } .line-1m { --c: #00e5ff; } .line-15m { --c: #39ff14; } .line-1h { --c: #ffea00; } .line-1d { --c: #ff2bd6; }
+.line-raw { --c: #f2f2ff; } .line-1m { --c: #00e5ff; } .line-5m { --c: #2f6bff; } .line-15m { --c: #39ff14; } .line-30m { --c: #ff8c00; }
+.line-1h { --c: #ffea00; } .line-6h { --c: #ff1f3d; } .line-12h { --c: #a64dff; } .line-1d { --c: #ff2bd6; }
 .gbtns button:disabled { opacity: 0.35; cursor: not-allowed; }
 .gwrap { position: relative; }
 #g-canvas { display: block; width: 100%; height: 300px; }

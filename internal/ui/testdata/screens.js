@@ -38,7 +38,7 @@ const cfg = JSON.parse(process.argv[2]);
       // A worker opens its hashrate graph; the range and averaging buttons redraw it.
       await page.click('#workers tr.wrow');
       await page.waitForFunction(() => /average/.test((document.getElementById('g-note') || {}).textContent || ''), null, { timeout: 5000 });
-      await page.click('#g-range button[data-v="24h"]');
+      await page.selectOption('#g-range', '24h');
       await page.click('#g-smooth button[data-v="1h"]');
       // Several lines at once (15m and 1h), each its own colour; raw needs the 1h range.
       const g = await page.evaluate(() => ({ raw: document.querySelector('#g-smooth button[data-v="raw"]').disabled, note: document.getElementById('g-note').textContent, rows: document.querySelectorAll('tr.wgraph').length,
