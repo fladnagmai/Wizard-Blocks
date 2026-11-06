@@ -231,7 +231,7 @@ graphRow.innerHTML = `<td colspan="7"><div class="gctl">
   <span class="glabel" id="g-title"></span>
   <span class="gbtns" id="g-range" role="group" aria-label="Time range">${Object.keys(RANGES).map((k) => `<button type="button" data-v="${k}">${k}</button>`).join('')}</span>
   <span class="gbtns" id="g-smooth" role="group" aria-label="Averaging">${Object.keys(SMOOTH).map((k) => `<button type="button" data-v="${k}">${k === 'raw' ? 'raw' : k + ' avg'}</button>`).join('')}</span>
-  </div><div class="gwrap"><canvas id="g-canvas" height="240"></canvas><div class="gtip" id="g-tip" hidden></div></div>
+  </div><div class="gwrap"><canvas id="g-canvas" height="300"></canvas><div class="gtip" id="g-tip" hidden></div></div>
   <p class="dim small" id="g-note"></p></td>`;
 
 function placeGraph() {
@@ -314,12 +314,12 @@ function drawGraph() {
   if (!cv || !graphRow.isConnected) return;
   const cs = getComputedStyle(document.documentElement);
   const fg = cs.getPropertyValue('--g').trim() || '#0f0', dim = cs.getPropertyValue('--dim').trim() || '#080', line = cs.getPropertyValue('--line').trim() || '#030';
-  const dpr = Math.min(2, window.devicePixelRatio || 1), W = cv.clientWidth || 600, H = 240;
+  const dpr = Math.min(2, window.devicePixelRatio || 1), W = cv.clientWidth || 600, H = 300;
   cv.width = W * dpr; cv.height = H * dpr;
   const g = cv.getContext('2d');
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0, 0, W, H);
-  g.font = '12px ui-monospace, Menlo, Consolas, monospace';
+  g.font = 'bold 14px ui-monospace, Menlo, Consolas, monospace';
   $('g-title').textContent = graph.name;
   const pts = graphPoints();
   graph.pts = pts;
@@ -329,7 +329,7 @@ function drawGraph() {
     g.fillStyle = dim; g.fillText(graph.data ? 'no shares in this range' : 'loading…', 12, H / 2);
     return;
   }
-  const L = 74, R = 10, T = 10, B = 24, pw = W - L - R, ph = H - T - B;
+  const L = 110, R = 12, T = 12, B = 28, pw = W - L - R, ph = H - T - B;
   const t0 = pts[0][0], t1 = pts[pts.length - 1][0] || t0 + 1;
   let ymax = Math.max(...pts.map((p) => p[1])) * 1.1 || 1;
   const X = (t) => L + (t - t0) / Math.max(1, t1 - t0) * pw, Y = (v) => T + ph - v / ymax * ph;
@@ -349,18 +349,23 @@ function drawGraph() {
     g.fillText(lbl, Math.min(Math.max(X(t), L + 30), W - R - 30), H - B + 6);
   }
   // The series.
-  g.strokeStyle = fg; g.lineWidth = 2; g.lineJoin = 'round';
+  // The series: a bright neon line with a glow.
+  const neon = cs.getPropertyValue('--neon').trim() || fg;
+  g.save();
+  g.strokeStyle = neon; g.lineWidth = 5; g.lineJoin = 'round'; g.lineCap = 'round';
+  g.shadowColor = neon; g.shadowBlur = 16;
   g.beginPath();
   pts.forEach((p, i) => (i ? g.lineTo(X(p[0]), Y(p[1])) : g.moveTo(X(p[0]), Y(p[1]))));
   g.stroke();
+  g.restore();
   // Hover: crosshair, point and value.
   const tip = $('g-tip');
   if (graph.hover >= 0 && graph.hover < pts.length) {
     const p = pts[graph.hover], x = X(p[0]), y = Y(p[1]);
     g.strokeStyle = dim; g.lineWidth = 1;
     g.beginPath(); g.moveTo(Math.round(x) + 0.5, T); g.lineTo(Math.round(x) + 0.5, T + ph); g.stroke();
-    g.fillStyle = '#000'; g.strokeStyle = fg; g.lineWidth = 2;
-    g.beginPath(); g.arc(x, y, 4, 0, Math.PI * 2); g.fill(); g.stroke();
+    g.fillStyle = '#000'; g.strokeStyle = cs.getPropertyValue('--neon').trim() || fg; g.lineWidth = 2;
+    g.lineWidth = 3; g.beginPath(); g.arc(x, y, 7, 0, Math.PI * 2); g.fill(); g.stroke();
     tip.hidden = false;
     tip.textContent = `${fmtHash(p[1])} · ${new Date(p[0] * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
     tip.style.left = Math.min(Math.max(x - tip.offsetWidth / 2, 0), W - tip.offsetWidth) + 'px';
@@ -369,7 +374,7 @@ function drawGraph() {
 const graphHover = (e) => {
   const cv = document.getElementById('g-canvas');
   if (e.target !== cv || !graph.pts.length) return;
-  const r = cv.getBoundingClientRect(), x = e.clientX - r.left, L = 74, pw = r.width - L - 10;
+  const r = cv.getBoundingClientRect(), x = e.clientX - r.left, L = 110, pw = r.width - L - 12;
   const t0 = graph.pts[0][0], t1 = graph.pts[graph.pts.length - 1][0];
   const t = t0 + (x - L) / pw * (t1 - t0);
   let best = 0;
