@@ -220,17 +220,19 @@ function render(st) {
 }
 
 // ---------- worker graph: click a worker for its hashrate over time ----------
-// Ranges and smoothing: "raw" is the 10-second buckets (last hour only);
-// the others are trailing averages of the per-minute history (last week).
+// Ranges and averages: "raw" is the 10-second buckets (last hour only); the
+// others are trailing averages of the per-minute history (last week). Any
+// number of averages can be shown at once, each in its own neon colour.
 const RANGES = { '1h': 60, '6h': 360, '24h': 1440, '7d': 10080 }; // minutes
 const SMOOTH = { raw: 0, '1m': 1, '15m': 15, '1h': 60, '1d': 1440 }; // minutes
-const graph = { name: '', range: '1h', smooth: '15m', data: null, at: 0, hover: -1, pts: [] };
+const NEON = { raw: '#f2f2ff', '1m': '#00e5ff', '15m': '#39ff14', '1h': '#ffea00', '1d': '#ff2bd6' };
+const graph = { name: '', range: '1h', shown: new Set(['15m']), data: null, at: 0, hoverT: null, series: [] };
 const graphRow = document.createElement('tr');
 graphRow.className = 'wgraph';
 graphRow.innerHTML = `<td colspan="7"><div class="gctl">
   <span class="glabel" id="g-title"></span>
   <span class="gbtns" id="g-range" role="group" aria-label="Time range">${Object.keys(RANGES).map((k) => `<button type="button" data-v="${k}">${k}</button>`).join('')}</span>
-  <span class="gbtns" id="g-smooth" role="group" aria-label="Averaging">${Object.keys(SMOOTH).map((k) => `<button type="button" data-v="${k}">${k === 'raw' ? 'raw' : k + ' avg'}</button>`).join('')}</span>
+  <span class="gbtns" id="g-smooth" role="group" aria-label="Lines shown">${Object.keys(SMOOTH).map((k) => `<button type="button" data-v="${k}" class="line-${k}">${k === 'raw' ? 'raw' : k + ' avg'}</button>`).join('')}</span>
   </div><div class="gwrap"><canvas id="g-canvas" height="300"></canvas><div class="gtip" id="g-tip" hidden></div></div>
   <p class="dim small" id="g-note"></p></td>`;
 
@@ -244,8 +246,8 @@ function placeGraph() {
 function syncGraphButtons() {
   graphRow.querySelectorAll('#g-range button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === graph.range)));
   graphRow.querySelectorAll('#g-smooth button').forEach((b) => {
-    b.setAttribute('aria-pressed', String(b.dataset.v === graph.smooth));
     b.disabled = b.dataset.v === 'raw' && graph.range !== '1h'; // raw: last hour only
+    b.setAttribute('aria-pressed', String(graph.shown.has(b.dataset.v) && !b.disabled));
   });
 }
 async function loadGraph() {
@@ -262,7 +264,7 @@ async function loadGraph() {
 }
 function openGraph(name) {
   graph.name = graph.name === name ? '' : name;
-  graph.data = null; graph.hover = -1;
+  graph.data = null; graph.hoverT = null;
   if (lastState) render(lastState);
   if (graph.name) loadGraph();
 }
@@ -277,26 +279,28 @@ $('workers').addEventListener('keydown', (e) => {
 graphRow.addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b || b.disabled) return;
-  if (b.parentElement.id === 'g-range') {
-    graph.range = b.dataset.v;
-    if (graph.smooth === 'raw' && graph.range !== '1h') graph.smooth = '1m';
-  } else if (b.parentElement.id === 'g-smooth') graph.smooth = b.dataset.v;
-  graph.hover = -1;
+  if (b.parentElement.id === 'g-range') graph.range = b.dataset.v;
+  else if (b.parentElement.id === 'g-smooth') {
+    if (graph.shown.has(b.dataset.v)) { if (graph.shown.size > 1) graph.shown.delete(b.dataset.v); } else graph.shown.add(b.dataset.v);
+  }
+  // Keep at least one line that the range can show.
+  if (graph.range !== '1h' && [...graph.shown].every((k) => k === 'raw')) graph.shown.add('1m');
+  graph.hoverT = null;
   syncGraphButtons();
   drawGraph();
 });
-// points: [unix seconds, H/s] for the chosen range and smoothing.
-function graphPoints() {
+// The points [unix seconds, H/s] of one line for the chosen range.
+function graphPoints(key) {
   const d = graph.data;
   if (!d) return [];
   const d1 = d.diff1_hashes;
-  if (graph.smooth === 'raw') {
+  if (key === 'raw') {
     const n = d.raw.length;
     return d.raw.map((v, i) => [d.raw_end - (n - 1 - i) * d.raw_step_s, v * d1 / d.raw_step_s]);
   }
-  const win = SMOOTH[graph.smooth], span = RANGES[graph.range], m = d.minutes, n = m.length;
-  // Downsample long ranges to at most ~720 points (each point still the
-  // trailing average over the chosen window).
+  const win = SMOOTH[key], span = RANGES[graph.range], m = d.minutes, n = m.length;
+  // Long ranges are downsampled to at most ~720 points (each still the
+  // trailing average over the line's window).
   const step = Math.max(1, Math.floor(span / 720));
   const pre = new Float64Array(n + 1);
   for (let i = 0; i < n; i++) pre[i + 1] = pre[i] + m[i];
@@ -309,11 +313,17 @@ function graphPoints() {
   }
   return pts;
 }
+const lineName = (k) => (k === 'raw' ? 'raw (10 s)' : k + ' avg');
+function nearest(pts, t) {
+  let best = 0;
+  for (let i = 1; i < pts.length; i++) if (Math.abs(pts[i][0] - t) < Math.abs(pts[best][0] - t)) best = i;
+  return pts[best];
+}
 function drawGraph() {
   const cv = document.getElementById('g-canvas');
   if (!cv || !graphRow.isConnected) return;
   const cs = getComputedStyle(document.documentElement);
-  const fg = cs.getPropertyValue('--g').trim() || '#0f0', dim = cs.getPropertyValue('--dim').trim() || '#080', line = cs.getPropertyValue('--line').trim() || '#030';
+  const dim = cs.getPropertyValue('--dim').trim() || '#080', line = cs.getPropertyValue('--line').trim() || '#030';
   const dpr = Math.min(2, window.devicePixelRatio || 1), W = cv.clientWidth || 600, H = 300;
   cv.width = W * dpr; cv.height = H * dpr;
   const g = cv.getContext('2d');
@@ -321,19 +331,24 @@ function drawGraph() {
   g.clearRect(0, 0, W, H);
   g.font = 'bold 14px ui-monospace, Menlo, Consolas, monospace';
   $('g-title').textContent = graph.name;
-  const pts = graphPoints();
-  graph.pts = pts;
-  const avg = pts.length ? pts.reduce((a, p) => a + p[1], 0) / pts.length : 0;
-  if (graph.data) set('g-note', `${graph.smooth === 'raw' ? 'Raw 10-second readings' : (graph.smooth === '1m' ? 'Per minute' : graph.smooth + ' rolling average')} · last ${graph.range} · average ${fmtHash(avg)} · updates every 30 s`);
-  if (!pts.length) {
+  const keys = Object.keys(SMOOTH).filter((k) => graph.shown.has(k) && !(k === 'raw' && graph.range !== '1h'));
+  const series = keys.map((k) => ({ k, pts: graphPoints(k) })).filter((s) => s.pts.length);
+  graph.series = series;
+  if (graph.data) {
+    const avg = (pts) => pts.reduce((a, p) => a + p[1], 0) / pts.length;
+    const main = series.find((s) => s.k !== 'raw') || series[0];
+    set('g-note', `last ${graph.range}${main ? ' · average ' + fmtHash(avg(main.pts)) : ''} · tap or hover the graph for values · updates every 30 s`);
+  }
+  if (!series.length) {
     g.fillStyle = dim; g.fillText(graph.data ? 'no shares in this range' : 'loading…', 12, H / 2);
+    $('g-tip').hidden = true;
     return;
   }
   const L = 110, R = 12, T = 12, B = 28, pw = W - L - R, ph = H - T - B;
-  const t0 = pts[0][0], t1 = pts[pts.length - 1][0] || t0 + 1;
-  let ymax = Math.max(...pts.map((p) => p[1])) * 1.1 || 1;
+  const t1 = Math.max(...series.map((s) => s.pts[s.pts.length - 1][0]));
+  const t0 = Math.min(...series.map((s) => s.pts[0][0]));
+  const ymax = Math.max(...series.flatMap((s) => s.pts.map((p) => p[1]))) * 1.1 || 1;
   const X = (t) => L + (t - t0) / Math.max(1, t1 - t0) * pw, Y = (v) => T + ph - v / ymax * ph;
-  // Grid and axes.
   g.strokeStyle = line; g.fillStyle = dim; g.lineWidth = 1;
   g.textAlign = 'right'; g.textBaseline = 'middle';
   for (let k = 0; k <= 4; k++) {
@@ -348,43 +363,52 @@ function drawGraph() {
     const lbl = span > 2 * 86400 ? d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit' }) : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     g.fillText(lbl, Math.min(Math.max(X(t), L + 30), W - R - 30), H - B + 6);
   }
-  // The series.
-  // The series: a bright neon line with a glow.
-  const neon = cs.getPropertyValue('--neon').trim() || fg;
-  g.save();
-  g.strokeStyle = neon; g.lineWidth = 5; g.lineJoin = 'round'; g.lineCap = 'round';
-  g.shadowColor = neon; g.shadowBlur = 16;
-  g.beginPath();
-  pts.forEach((p, i) => (i ? g.lineTo(X(p[0]), Y(p[1])) : g.moveTo(X(p[0]), Y(p[1]))));
-  g.stroke();
-  g.restore();
-  // Hover: crosshair, point and value.
+  // Each line: thick neon with a glow; raw first so the averages sit on top.
+  for (const s of series) {
+    g.save();
+    g.strokeStyle = NEON[s.k]; g.lineWidth = s.k === 'raw' ? 3 : 5; g.lineJoin = 'round'; g.lineCap = 'round';
+    g.shadowColor = NEON[s.k]; g.shadowBlur = 16;
+    g.beginPath();
+    s.pts.forEach((p, i) => (i ? g.lineTo(X(p[0]), Y(p[1])) : g.moveTo(X(p[0]), Y(p[1]))));
+    g.stroke();
+    g.restore();
+  }
+  // Hover / tap: a crosshair, a dot on every line and all their values.
   const tip = $('g-tip');
-  if (graph.hover >= 0 && graph.hover < pts.length) {
-    const p = pts[graph.hover], x = X(p[0]), y = Y(p[1]);
+  if (graph.hoverT != null) {
+    const t = Math.min(Math.max(graph.hoverT, t0), t1), x = X(t);
     g.strokeStyle = dim; g.lineWidth = 1;
     g.beginPath(); g.moveTo(Math.round(x) + 0.5, T); g.lineTo(Math.round(x) + 0.5, T + ph); g.stroke();
-    g.fillStyle = '#000'; g.strokeStyle = cs.getPropertyValue('--neon').trim() || fg; g.lineWidth = 2;
-    g.lineWidth = 3; g.beginPath(); g.arc(x, y, 7, 0, Math.PI * 2); g.fill(); g.stroke();
+    tip.replaceChildren();
+    const head = document.createElement('div');
+    head.textContent = new Date(t * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    tip.append(head);
+    for (const s of series) {
+      const p = nearest(s.pts, t);
+      g.fillStyle = '#000'; g.strokeStyle = NEON[s.k]; g.lineWidth = 3;
+      g.beginPath(); g.arc(X(p[0]), Y(p[1]), 7, 0, Math.PI * 2); g.fill(); g.stroke();
+      const row = document.createElement('div');
+      row.style.color = NEON[s.k];
+      row.textContent = `${lineName(s.k)}: ${fmtHash(p[1])}`;
+      tip.append(row);
+    }
     tip.hidden = false;
-    tip.textContent = `${fmtHash(p[1])} · ${new Date(p[0] * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
-    tip.style.left = Math.min(Math.max(x - tip.offsetWidth / 2, 0), W - tip.offsetWidth) + 'px';
+    tip.style.left = Math.min(Math.max(x + 12, 0), W - tip.offsetWidth) + 'px';
+    if (x + 12 + tip.offsetWidth > W) tip.style.left = Math.max(0, x - 12 - tip.offsetWidth) + 'px';
   } else tip.hidden = true;
 }
 const graphHover = (e) => {
   const cv = document.getElementById('g-canvas');
-  if (e.target !== cv || !graph.pts.length) return;
+  if (e.target !== cv || !graph.series.length) return;
   const r = cv.getBoundingClientRect(), x = e.clientX - r.left, L = 110, pw = r.width - L - 12;
-  const t0 = graph.pts[0][0], t1 = graph.pts[graph.pts.length - 1][0];
-  const t = t0 + (x - L) / pw * (t1 - t0);
-  let best = 0;
-  graph.pts.forEach((p, i) => { if (Math.abs(p[0] - t) < Math.abs(graph.pts[best][0] - t)) best = i; });
-  graph.hover = best;
+  const t1 = Math.max(...graph.series.map((s) => s.pts[s.pts.length - 1][0]));
+  const t0 = Math.min(...graph.series.map((s) => s.pts[0][0]));
+  graph.hoverT = t0 + (x - L) / pw * (t1 - t0);
   drawGraph();
 };
 graphRow.addEventListener('pointermove', graphHover);
 graphRow.addEventListener('pointerdown', graphHover); // a tap on a phone
-graphRow.addEventListener('pointerleave', () => { graph.hover = -1; drawGraph(); });
+graphRow.addEventListener('pointerleave', () => { graph.hoverT = null; drawGraph(); });
 window.addEventListener('resize', drawGraph);
 setInterval(() => { if (graph.name && !document.hidden && Date.now() - graph.at > 30000) loadGraph(); }, 5000);
 

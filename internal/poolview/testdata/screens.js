@@ -38,6 +38,9 @@ const cfg = JSON.parse(process.argv[2]);
       if (coin !== 'btc' && !/ash/.test(info.text)) errors.push(`${coin}: workers missing`);
       if (coin === 'btc' && !/unreachable/.test(info.text)) errors.push('btc: no "unreachable" for a pool that is not running');
       if (info.overflow) errors.push(`${coin}: horizontal overflow`);
+      const color = await page.evaluate(() => getComputedStyle(document.body).color);
+      const want = { bch: 'rgb(10, 193, 142)', btc: 'rgb(247, 147, 26)', ltc: 'rgb(255, 105, 180)' }[coin];
+      if (color !== want) errors.push(`${coin}: colour ${color}, want ${want}`);
       await page.screenshot({ path: `${cfg.out}/${coin}-${vname}.png`, fullPage: true });
     }
     console.log(`${vname}: ${errors.length ? 'ERRORS: ' + errors.join('; ') : 'ok'}`);

@@ -40,11 +40,14 @@ const cfg = JSON.parse(process.argv[2]);
       await page.waitForFunction(() => /average/.test((document.getElementById('g-note') || {}).textContent || ''), null, { timeout: 5000 });
       await page.click('#g-range button[data-v="24h"]');
       await page.click('#g-smooth button[data-v="1h"]');
-      const g = await page.evaluate(() => ({ raw: document.querySelector('#g-smooth button[data-v="raw"]').disabled, note: document.getElementById('g-note').textContent, rows: document.querySelectorAll('tr.wgraph').length }));
-      if (!g.raw || !/1h rolling average · last 24h/.test(g.note) || g.rows !== 1) errors.push('worker graph ' + JSON.stringify(g));
+      // Several lines at once (15m and 1h), each its own colour; raw needs the 1h range.
+      const g = await page.evaluate(() => ({ raw: document.querySelector('#g-smooth button[data-v="raw"]').disabled, note: document.getElementById('g-note').textContent, rows: document.querySelectorAll('tr.wgraph').length,
+        on: [...document.querySelectorAll('#g-smooth button[aria-pressed="true"]')].map((b) => b.dataset.v) }));
+      if (!g.raw || !/last 24h/.test(g.note) || g.rows !== 1 || g.on.join(',') !== '15m,1h') errors.push('worker graph ' + JSON.stringify(g));
       const cvb = await page.locator('#g-canvas').boundingBox();
       await page.locator('#g-canvas').hover({ position: { x: cvb.width - 20, y: 100 } });
-      if (await page.evaluate(() => document.getElementById('g-tip').hidden)) errors.push('graph hover tooltip missing');
+      const tipRows = await page.evaluate(() => document.getElementById('g-tip').hidden ? 0 : document.getElementById('g-tip').children.length);
+      if (tipRows !== 3) errors.push('graph hover: ' + tipRows + ' rows (time + 2 lines expected)');
       // The test's shares are in the newest minute: the line must not be flat at zero.
       if (!/average [1-9]/.test(await page.evaluate(() => document.getElementById('g-note').textContent))) errors.push('worker graph shows no hashrate');
       await page.locator('tr.wgraph').screenshot({ path: `${cfg.out}/${name}-worker-graph-${vname}.png` });

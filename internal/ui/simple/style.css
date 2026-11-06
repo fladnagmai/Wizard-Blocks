@@ -77,8 +77,11 @@ tr.wgraph > td { white-space: normal; padding: 10px 0 12px; }
 .gbtns { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .gbtns button { min-height: 36px; padding: 4px 12px; font-size: 14px; }
 .gbtns button[aria-pressed="true"] { background: var(--hov); border-color: var(--g); }
+/* The line buttons are the legend: each in its line's neon colour when on. */
+#g-smooth button[aria-pressed="true"] { color: var(--c); border-color: var(--c); box-shadow: 0 0 8px var(--c); background: #000; }
+.line-raw { --c: #f2f2ff; } .line-1m { --c: #00e5ff; } .line-15m { --c: #39ff14; } .line-1h { --c: #ffea00; } .line-1d { --c: #ff2bd6; }
 .gbtns button:disabled { opacity: 0.35; cursor: not-allowed; }
 .gwrap { position: relative; }
 #g-canvas { display: block; width: 100%; height: 300px; }
-.gtip { position: absolute; top: 0; background: #000; border: 2px solid var(--neon); color: var(--neon); padding: 4px 10px; font-size: 16px; white-space: nowrap; pointer-events: none; }
+.gtip { position: absolute; top: 0; background: rgba(0, 0, 0, 0.9); border: 2px solid var(--g); color: var(--g); padding: 4px 10px; font-size: 16px; line-height: 1.4; white-space: nowrap; pointer-events: none; }
 #g-note { margin: 6px 0 0; font-size: 14px; }
