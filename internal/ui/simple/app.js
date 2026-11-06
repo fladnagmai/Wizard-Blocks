@@ -225,14 +225,18 @@ function render(st) {
 // number of averages can be shown at once, each in its own neon colour.
 const RANGES = { '1h': 60, '6h': 360, '24h': 1440, '7d': 10080 }; // minutes
 const SMOOTH = { raw: 0, '1m': 1, '15m': 15, '1h': 60, '1d': 1440 }; // minutes
+// Plain words, so the time shown and the averaging cannot be confused.
+const RANGE_LABEL = { '1h': 'last hour', '6h': 'last 6 hours', '24h': 'last day', '7d': 'last week' };
+const LINE_LABEL = { raw: 'raw', '1m': '1-min avg', '15m': '15-min avg', '1h': 'hourly avg', '1d': 'daily avg' };
 const NEON = { raw: '#f2f2ff', '1m': '#00e5ff', '15m': '#39ff14', '1h': '#ffea00', '1d': '#ff2bd6' };
+const lineName = (k) => LINE_LABEL[k];
 const graph = { name: '', range: '1h', shown: new Set(['15m']), data: null, at: 0, hoverT: null, series: [] };
 const graphRow = document.createElement('tr');
 graphRow.className = 'wgraph';
 graphRow.innerHTML = `<td colspan="7"><div class="gctl">
   <span class="glabel" id="g-title"></span>
-  <span class="gbtns" id="g-range" role="group" aria-label="Time range">${Object.keys(RANGES).map((k) => `<button type="button" data-v="${k}">${k}</button>`).join('')}</span>
-  <span class="gbtns" id="g-smooth" role="group" aria-label="Lines shown">${Object.keys(SMOOTH).map((k) => `<button type="button" data-v="${k}" class="line-${k}">${k === 'raw' ? 'raw' : k + ' avg'}</button>`).join('')}</span>
+  <span class="gbtns" id="g-range" role="group" aria-label="Time shown"><span class="gname">show</span>${Object.keys(RANGES).map((k) => `<button type="button" data-v="${k}">${RANGE_LABEL[k]}</button>`).join('')}</span>
+  <span class="gbtns" id="g-smooth" role="group" aria-label="Lines"><span class="gname">lines</span>${Object.keys(SMOOTH).map((k) => `<button type="button" data-v="${k}" class="line-${k}">${lineName(k)}</button>`).join('')}</span>
   </div><div class="gwrap"><canvas id="g-canvas" height="300"></canvas><div class="gtip" id="g-tip" hidden></div></div>
   <p class="dim small" id="g-note"></p></td>`;
 
@@ -313,7 +317,6 @@ function graphPoints(key) {
   }
   return pts;
 }
-const lineName = (k) => (k === 'raw' ? 'raw (10 s)' : k + ' avg');
 function nearest(pts, t) {
   let best = 0;
   for (let i = 1; i < pts.length; i++) if (Math.abs(pts[i][0] - t) < Math.abs(pts[best][0] - t)) best = i;
@@ -337,7 +340,7 @@ function drawGraph() {
   if (graph.data) {
     const avg = (pts) => pts.reduce((a, p) => a + p[1], 0) / pts.length;
     const main = series.find((s) => s.k !== 'raw') || series[0];
-    set('g-note', `last ${graph.range}${main ? ' · average ' + fmtHash(avg(main.pts)) : ''} · tap or hover the graph for values · updates every 30 s`);
+    set('g-note', `${RANGE_LABEL[graph.range]}${main ? ' · average ' + fmtHash(avg(main.pts)) : ''} · tap or hover the graph for values · updates every 30 s`);
   }
   if (!series.length) {
     g.fillStyle = dim; g.fillText(graph.data ? 'no shares in this range' : 'loading…', 12, H / 2);

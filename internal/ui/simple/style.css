@@ -74,7 +74,8 @@ tr.wrow:focus-visible { outline: 1px solid var(--g); outline-offset: -1px; }
 tr.wgraph > td { white-space: normal; padding: 10px 0 12px; }
 .gctl { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 8px; }
 .glabel { font-size: 16px; letter-spacing: 1px; margin-right: auto; }
-.gbtns { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.gbtns { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.gname { color: var(--dim); margin-right: 4px; }
 .gbtns button { min-height: 36px; padding: 4px 12px; font-size: 14px; }
 .gbtns button[aria-pressed="true"] { background: var(--hov); border-color: var(--g); }
 /* The line buttons are the legend: each in its line's neon colour when on. */

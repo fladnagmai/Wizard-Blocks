@@ -43,7 +43,7 @@ const cfg = JSON.parse(process.argv[2]);
       // Several lines at once (15m and 1h), each its own colour; raw needs the 1h range.
       const g = await page.evaluate(() => ({ raw: document.querySelector('#g-smooth button[data-v="raw"]').disabled, note: document.getElementById('g-note').textContent, rows: document.querySelectorAll('tr.wgraph').length,
         on: [...document.querySelectorAll('#g-smooth button[aria-pressed="true"]')].map((b) => b.dataset.v) }));
-      if (!g.raw || !/last 24h/.test(g.note) || g.rows !== 1 || g.on.join(',') !== '15m,1h') errors.push('worker graph ' + JSON.stringify(g));
+      if (!g.raw || !/last day/.test(g.note) || g.rows !== 1 || g.on.join(',') !== '15m,1h') errors.push('worker graph ' + JSON.stringify(g));
       const cvb = await page.locator('#g-canvas').boundingBox();
       await page.locator('#g-canvas').hover({ position: { x: cvb.width - 20, y: 100 } });
       const tipRows = await page.evaluate(() => document.getElementById('g-tip').hidden ? 0 : document.getElementById('g-tip').children.length);
